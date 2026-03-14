@@ -1,10 +1,31 @@
 import type { RiskBucket } from '../../types';
+import { retryFetch } from '../../config/api';
+import { logger } from '../../utils/logger';
 
 const CLASS_LABELS = ['Bronchiectasis', 'Bronchiolitis', 'COPD', 'Healthy', 'Pneumonia', 'URTI'];
+
+export interface PreprocessingQuality {
+  rmsDb: number;
+  peakDb: number;
+  dcOffsetRaw: number;
+  clippingRatio: number;
+  silenceRatio: number;
+  snrDb: number;
+  durationSec: number;
+  sampleRate: number;
+  samplesRaw: number;
+  bandpassHz: [number, number];
+  preEmphasisCoeff: number;
+  warnings: string[];
+}
 
 export interface InferenceResult {
   classProbabilities: Record<string, number>;
   confidence: number;
+  recordId?: string;
+  createdAt?: string;
+  modelPath?: string;
+  signalQuality?: PreprocessingQuality;
 }
 
 import { getApiUrl } from '../../config/api';
@@ -16,13 +37,13 @@ class ModelRunner {
 
   async loadModel(): Promise<void> {
     try {
-      const res = await fetch(`${this.getServerUrl()}/health`);
+      const res = await retryFetch(() => fetch(`${this.getServerUrl()}/health`), 2);
       const data = await res.json();
       if (!data.model_loaded) {
-        console.warn('Server running but no model loaded — will return mock predictions');
+        logger.warn('Server running but no model loaded — will return mock predictions');
       }
     } catch {
-      console.warn('Inference server not reachable, falling back to mock');
+      logger.warn('Inference server not reachable, falling back to mock');
     }
   }
 
@@ -36,23 +57,36 @@ class ModelRunner {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.pcm');
 
-      const res = await fetch(`${this.getServerUrl()}/predict`, {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await retryFetch(
+        () =>
+          fetch(`${this.getServerUrl()}/predict`, {
+            method: 'POST',
+            body: formData,
+          }),
+        2
+      );
 
       if (!res.ok) {
-        console.error('Inference server error:', res.status);
+        logger.error('Inference server error', { status: res.status });
         return this.mockInference();
       }
 
       const data = await res.json();
+      if (data.signalQuality?.warnings?.length) {
+        logger.warn('Preprocessing warnings from server', { warnings: data.signalQuality.warnings });
+      }
       return {
         classProbabilities: data.classProbabilities,
         confidence: data.confidence,
+        recordId: data.recordId,
+        createdAt: data.createdAt,
+        modelPath: data.modelPath,
+        signalQuality: data.signalQuality,
       };
     } catch (error) {
-      console.error('Inference request failed, using mock:', error);
+      logger.error('Inference request failed, using mock', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return this.mockInference();
     }
   }

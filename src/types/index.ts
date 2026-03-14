@@ -22,6 +22,23 @@ export interface Patient {
   updatedAt: string;
 }
 
+export type MedicalRecordType =
+  | "lab_result"
+  | "prescription"
+  | "diagnosis"
+  | "imaging"
+  | "other";
+
+export interface MedicalRecord {
+  id: number;
+  patientId: number;
+  recordType: MedicalRecordType;
+  title: string;
+  content: string;
+  recordDate?: string;
+  createdAt: string;
+}
+
 // Signal quality from audio capture
 export interface SignalQuality {
   qualityScore: number; // 0..1
@@ -74,6 +91,7 @@ export interface ScreeningSession {
   cnnOutput?: CNNOutputTool;
   symptoms: string[];
   notes: string;
+  zoneResults?: ZoneRecordingResult[];
   referralStatus?: ReferralStatus;
   referralTimestamp?: string;
   gpsLat?: number;
@@ -103,15 +121,6 @@ export interface AshaWorker {
   language: 'en' | 'hi';
 }
 
-// BLE device state
-export type BleConnectionState = 'disconnected' | 'scanning' | 'connecting' | 'connected' | 'streaming';
-
-export interface BleDevice {
-  id: string;
-  name: string;
-  rssi: number;
-  connectionState: BleConnectionState;
-}
 
 // AI assistant message
 export interface AiMessage {
@@ -136,4 +145,93 @@ export interface ReferralPacket {
   symptomTimeline: string[];
   aiConversationSummary: string;
   urgencyLevel: RiskBucket;
+}
+
+export type LungZone =
+  | "left_upper_front"
+  | "right_upper_front"
+  | "left_lower_back"
+  | "right_lower_back";
+
+export interface ZoneRecordingResult {
+  zone: LungZone;
+  qualityScore: number;
+  durationSec: number;
+  clippingRatio: number;
+  noiseFloorDb: number;
+  passed: boolean;
+  reason?: string;
+}
+
+export type RecordingErrorCode =
+  | "ble_disconnected"
+  | "weak_signal"
+  | "high_noise"
+  | "audio_clipping"
+  | "incomplete_capture";
+
+export interface RecordingError {
+  code: RecordingErrorCode;
+  message: string;
+  zone?: LungZone;
+  recoverable: boolean;
+}
+
+export interface UserProfile {
+  phone?: string;
+  preferredLanguage?: "en" | "hi";
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  clinicName?: string;
+}
+
+export interface DoctorProfile {
+  id: string;
+  name: string;
+  specialty: string;
+  phone: string;
+  online: boolean;
+}
+
+export interface DoctorMessage {
+  id: string;
+  role: "patient" | "doctor" | "system";
+  content: string;
+  timestamp: string;
+}
+
+export interface DoctorThread {
+  id: string;
+  doctorId: string;
+  patientId: string;
+  messages: DoctorMessage[];
+}
+
+// Nurse note — can optionally be linked to a screening session or a medical record
+export interface PatientNote {
+  id: string;
+  text: string;
+  createdAt: string; // ISO-8601
+  linkedSessionId?: string;
+  linkedRecordId?: number;
+}
+
+export type CallMode = "dialer_now" | "in_app_later";
+export type CallStatus =
+  | "idle"
+  | "requesting"
+  | "ringing"
+  | "connected"
+  | "ended"
+  | "pending"
+  | "accepted"
+  | "cancelled";
+
+export interface CallSession {
+  id: string;
+  doctorId: string;
+  patientId: string;
+  mode: CallMode;
+  status: CallStatus;
+  createdAt: string;
 }

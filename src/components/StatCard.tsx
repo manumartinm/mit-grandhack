@@ -1,9 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Card } from './Card';
-import { colors } from '../theme/colors';
-import { spacing } from '../theme/spacing';
-import { typography } from '../theme/typography';
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
+import { Card } from "./Card";
+import { colors } from "../theme/colors";
+import { spacing } from "../theme/spacing";
+import { typography } from "../theme/typography";
 
 interface StatCardProps {
   label: string;
@@ -12,14 +12,26 @@ interface StatCardProps {
   icon?: React.ReactNode;
 }
 
-export function StatCard({ label, value, accentColor = colors.accent.teal, icon }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  accentColor = colors.accent.teal,
+  icon,
+}: StatCardProps) {
   return (
     <Card variant="elevated" style={styles.card}>
       <View style={styles.header}>
         {icon}
-        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.label} maxFontSizeMultiplier={2}>
+          {label}
+        </Text>
       </View>
-      <Text style={[styles.value, { color: accentColor }]}>{value}</Text>
+      <Text
+        style={[styles.value, { color: accentColor }]}
+        maxFontSizeMultiplier={2}
+      >
+        {value}
+      </Text>
     </Card>
   );
 }
@@ -27,8 +39,8 @@ export function StatCard({ label, value, accentColor = colors.accent.teal, icon 
 const styles = StyleSheet.create({
   card: { flex: 1, minWidth: 140 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
     marginBottom: spacing.sm,
   },

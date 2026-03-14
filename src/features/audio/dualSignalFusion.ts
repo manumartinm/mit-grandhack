@@ -1,4 +1,5 @@
 import type { CNNOutputTool, SignalSource, RiskBucket, Trend, SignalQuality } from '../../types';
+import { deriveTriageDecision } from "../inference/triage";
 
 interface SingleSignalResult {
   classProbabilities: Record<string, number>;
@@ -11,7 +12,8 @@ export function fuseSignals(
   coughResult: SingleSignalResult | null,
   sessionId: string,
   patientId: string,
-  previousSessions: { pneumoniaRiskBucket: RiskBucket }[]
+  previousSessions: { pneumoniaRiskBucket: RiskBucket }[],
+  options?: { allZonesCaptured?: boolean; severeSymptoms?: boolean }
 ): CNNOutputTool {
   let source: SignalSource;
   let fused: SingleSignalResult;
@@ -54,8 +56,13 @@ export function fuseSignals(
 
   const trend = computeTrend(pneumoniaRiskBucket, previousSessions);
 
-  const requiresDoctorEscalation = pneumoniaRiskBucket === 'high';
-  const requiresRepeatRecording = fused.signalQuality.qualityScore < 0.5;
+  const triage = deriveTriageDecision({
+    confidence: fused.confidence,
+    risk: pneumoniaRiskBucket,
+    qualityScore: fused.signalQuality.qualityScore,
+    allZonesCaptured: options?.allZonesCaptured ?? true,
+    severeSymptoms: options?.severeSymptoms,
+  });
 
   return {
     sessionId,
@@ -70,11 +77,13 @@ export function fuseSignals(
     trend,
     signalQuality: fused.signalQuality,
     guardrails: {
-      requiresRepeatRecording,
-      requiresDoctorEscalation,
-      escalationReason: requiresDoctorEscalation
-        ? `Pneumonia probability ${(pneumoniaProb * 100).toFixed(0)}% exceeds threshold`
-        : undefined,
+      requiresRepeatRecording: triage.requiresRepeatRecording,
+      requiresDoctorEscalation: triage.requiresDoctorEscalation,
+      escalationReason:
+        triage.reason ??
+        (triage.requiresDoctorEscalation
+          ? `Pneumonia probability ${(pneumoniaProb * 100).toFixed(0)}% exceeds threshold`
+          : undefined),
     },
   };
 }

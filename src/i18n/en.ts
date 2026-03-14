@@ -1,6 +1,6 @@
 export default {
   common: {
-    appName: 'PneumoScan',
+    appName: 'Sthetho Scan',
     tagline: 'Portable Lung Screening for Every Village',
     save: 'Save',
     cancel: 'Cancel',
@@ -108,5 +108,15 @@ export default {
     acknowledge: 'Acknowledge Alert',
     reportToSupervisor: 'Report to Supervisor',
     viewOnMap: 'View Area',
+  },
+  accessibility: {
+    goBack: 'Go back',
+    openProfile: 'Open profile',
+    offlineBanner: 'You are offline. Some features may be unavailable.',
+    recordingInProgress: 'Recording in progress',
+    sendMessage: 'Send message',
+    startVoiceRecording: 'Start voice recording',
+    stopVoiceRecording: 'Stop voice recording',
+    clearChat: 'Clear chat history',
   },
 };

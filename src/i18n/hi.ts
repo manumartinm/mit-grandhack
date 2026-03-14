@@ -1,6 +1,6 @@
 export default {
   common: {
-    appName: 'न्यूमोस्कैन',
+    appName: 'स्टेथो स्कैन',
     tagline: 'हर गांव के लिए पोर्टेबल फेफड़ों की जांच',
     save: 'सहेजें',
     cancel: 'रद्द करें',
@@ -108,5 +108,15 @@ export default {
     acknowledge: 'अलर्ट स्वीकार करें',
     reportToSupervisor: 'सुपरवाइज़र को रिपोर्ट करें',
     viewOnMap: 'क्षेत्र देखें',
+  },
+  accessibility: {
+    goBack: 'वापस जाएं',
+    openProfile: 'प्रोफ़ाइल खोलें',
+    offlineBanner: 'आप ऑफ़लाइन हैं। कुछ फीचर उपलब्ध नहीं हो सकते।',
+    recordingInProgress: 'रिकॉर्डिंग जारी है',
+    sendMessage: 'संदेश भेजें',
+    startVoiceRecording: 'वॉइस रिकॉर्डिंग शुरू करें',
+    stopVoiceRecording: 'वॉइस रिकॉर्डिंग रोकें',
+    clearChat: 'चैट इतिहास साफ़ करें',
   },
 };

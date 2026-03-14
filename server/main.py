@@ -1,16 +1,20 @@
-import numpy as np
-import librosa
-from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+import json
+import uuid
+from datetime import datetime
 
+import numpy as np
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
+
+import audio
 from database import Base, engine
+from routers import ai as ai_router
 from routers import auth as auth_router
+from routers import communications as communications_router
 from routers import patients as patients_router
 
 app = FastAPI(title="PneumoScan Inference API")
-
-app.include_router(auth_router.router)
-app.include_router(patients_router.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,119 +23,129 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CLASS_LABELS = ["Bronchiectasis", "Bronchiolitis", "COPD", "Healthy", "Pneumonia", "URTI"]
+app.include_router(auth_router.router)
+app.include_router(patients_router.router)
+app.include_router(communications_router.router)
+app.include_router(ai_router.router)
 
-MODEL_PATH = "lung_cnn.tflite"
 
-interpreter = None
-input_details = None
-output_details = None
-input_shape = None
+def _patch_columns(table: str, columns: dict[str, str]) -> None:
+    """Add missing columns to *table*. Safe to call on every startup."""
+    inspector = inspect(engine)
+    try:
+        existing = {col["name"] for col in inspector.get_columns(table)}
+    except Exception as exc:
+        print(f"WARNING: Could not inspect {table}: {exc}")
+        return
+    with engine.begin() as conn:
+        for col_name, ddl in columns.items():
+            if col_name not in existing:
+                print(f"Schema patch: {table}.{col_name}")
+                conn.execute(text(ddl))
+
+
+def _ensure_user_columns() -> None:
+    _patch_columns("users", {
+        "phone":                   "ALTER TABLE users ADD COLUMN phone VARCHAR(32) NULL",
+        "preferred_language":      "ALTER TABLE users ADD COLUMN preferred_language VARCHAR(10) NULL",
+        "emergency_contact_name":  "ALTER TABLE users ADD COLUMN emergency_contact_name VARCHAR(255) NULL",
+        "emergency_contact_phone": "ALTER TABLE users ADD COLUMN emergency_contact_phone VARCHAR(32) NULL",
+        "clinic_name":             "ALTER TABLE users ADD COLUMN clinic_name VARCHAR(255) NULL",
+    })
+
+
+def _ensure_patient_columns() -> None:
+    """Add dedicated profile columns that previously lived in the notes JSON blob."""
+    _patch_columns("patients", {
+        "age_years":      "ALTER TABLE patients ADD COLUMN age_years INT NULL",
+        "village":        "ALTER TABLE patients ADD COLUMN village VARCHAR(255) NULL",
+        "asha_worker_id": "ALTER TABLE patients ADD COLUMN asha_worker_id VARCHAR(64) NULL",
+        "weight_kg":      "ALTER TABLE patients ADD COLUMN weight_kg FLOAT NULL",
+    })
 
 
 @app.on_event("startup")
-def load_model():
-    global interpreter, input_details, output_details, input_shape
-
+def on_startup():
     import models  # noqa: F401 – ensure ORM models are registered
-    Base.metadata.create_all(bind=engine)
-
-    try:
-        try:
-            import tflite_runtime.interpreter as tflite
-            interpreter = tflite.Interpreter(model_path=MODEL_PATH)
-        except ImportError:
-            import tensorflow as tf
-            interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-
-        interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
-        input_shape = input_details[0]["shape"]
-
-        print(f"TFLite model loaded: {MODEL_PATH}")
-        print(f"  Input shape:  {input_shape}")
-        print(f"  Input dtype:  {input_details[0]['dtype']}")
-        print(f"  Output shape: {output_details[0]['shape']}")
-        print(f"  Output dtype: {output_details[0]['dtype']}")
-    except Exception as e:
-        print(f"WARNING: Could not load model: {e}")
-        print("Server will return mock predictions until a model is provided.")
-
-
-def extract_mfcc(audio_bytes: bytes, sr: int = 8000) -> np.ndarray:
-    """Convert raw PCM uint8 audio to MFCC features matching the CNN input."""
-    pcm = np.frombuffer(audio_bytes, dtype=np.uint8).astype(np.float32)
-    pcm = (pcm - 128.0) / 128.0
-
-    # Model expects (1, 40, 862, 1) → 40 MFCCs, 862 time frames
-    if input_shape is not None and len(input_shape) == 4:
-        n_mfcc = int(input_shape[1])
-        target_frames = int(input_shape[2])
-    elif input_shape is not None and len(input_shape) == 3:
-        n_mfcc = int(input_shape[2])
-        target_frames = int(input_shape[1])
-    else:
-        n_mfcc = 40
-        target_frames = 862
-
-    mfcc = librosa.feature.mfcc(y=pcm, sr=sr, n_mfcc=n_mfcc)
-
-    if mfcc.shape[1] < target_frames:
-        mfcc = np.pad(mfcc, ((0, 0), (0, target_frames - mfcc.shape[1])))
-    else:
-        mfcc = mfcc[:, :target_frames]
-
-    return mfcc
-
-
-def run_tflite(mfcc: np.ndarray) -> np.ndarray:
-    """Run inference through the TFLite interpreter."""
-    # Reshape MFCC to match model's expected input shape
-    if len(input_shape) == 4:
-        # (1, n_mfcc, frames, 1)
-        tensor = mfcc[np.newaxis, ..., np.newaxis].astype(np.float32)
-    elif len(input_shape) == 3:
-        # (1, frames, n_mfcc)
-        tensor = mfcc.T[np.newaxis, ...].astype(np.float32)
-    else:
-        tensor = mfcc[np.newaxis, ...].astype(np.float32)
-
-    interpreter.set_tensor(input_details[0]["index"], tensor)
-    interpreter.invoke()
-    return interpreter.get_tensor(output_details[0]["index"])[0]
+    Base.metadata.create_all(bind=engine)   # creates any NEW tables (e.g. screening_sessions)
+    _ensure_user_columns()
+    _ensure_patient_columns()
+    audio.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    audio.load_model()
 
 
 @app.post("/predict")
-async def predict(audio: UploadFile = File(...)):
+async def predict(file: UploadFile = File(...)):
     """
-    Accepts raw PCM audio (uint8, mono, 8kHz) and returns class probabilities.
-    The app sends the audio buffer directly as a binary file upload.
-    """
-    raw = await audio.read()
-    mfcc = extract_mfcc(raw, sr=8000)
+    Accept raw PCM audio (uint8, mono, 8 kHz) and return class probabilities.
 
-    if interpreter is not None:
-        preds = run_tflite(mfcc)
-        probs = {label: round(float(p), 4) for label, p in zip(CLASS_LABELS, preds)}
+    Pipeline
+    --------
+    Raw bytes → preprocess_signal → extract_features → TFLite inference
+    """
+    raw_bytes = await file.read()
+    pcm_uint8 = np.frombuffer(raw_bytes, dtype=np.uint8)
+
+    signal, quality = audio.preprocess_signal(pcm_uint8, sr=8000)
+    mfcc = audio.extract_features(signal, sr=8000)
+
+    if audio.interpreter is not None:
+        preds = audio.run_tflite(mfcc)
+        probs = {label: round(float(p), 4) for label, p in zip(audio.CLASS_LABELS, preds)}
     else:
-        raw_vals = np.random.dirichlet(np.ones(len(CLASS_LABELS)))
-        probs = {label: round(float(p), 4) for label, p in zip(CLASS_LABELS, raw_vals)}
+        raw_vals = np.random.dirichlet(np.ones(len(audio.CLASS_LABELS)))
+        probs    = {label: round(float(p), 4) for label, p in zip(audio.CLASS_LABELS, raw_vals)}
 
-    confidence = max(probs.values())
+    confidence     = max(probs.values())
     pneumonia_prob = probs.get("Pneumonia", 0.0)
+    created_at     = datetime.utcnow().isoformat()
+    record_id      = f"rec-{uuid.uuid4().hex[:12]}"
+
+    audio_path    = audio.RECORDINGS_DIR / f"{record_id}.pcm"
+    analysis_path = audio.RECORDINGS_DIR / f"{record_id}.json"
+    audio_path.write_bytes(raw_bytes)
+
+    analysis_payload = {
+        "recordId":           record_id,
+        "createdAt":          created_at,
+        "modelPath":          audio.MODEL_PATH,
+        "classProbabilities": probs,
+        "confidence":         confidence,
+        "pneumoniaProb":      pneumonia_prob,
+        "signalQuality":      quality,
+        "filename":           file.filename,
+        "contentType":        file.content_type,
+    }
+    analysis_path.write_text(json.dumps(analysis_payload, indent=2, cls=audio._NumpyEncoder))
 
     return {
+        "recordId":           record_id,
+        "createdAt":          created_at,
+        "modelPath":          audio.MODEL_PATH,
         "classProbabilities": probs,
-        "confidence": confidence,
-        "pneumoniaProb": pneumonia_prob,
+        "confidence":         confidence,
+        "pneumoniaProb":      pneumonia_prob,
+        "signalQuality":      quality,
     }
+
+
+@app.get("/screenings")
+def list_recordings(limit: int = 50):
+    files = sorted(audio.RECORDINGS_DIR.glob("*.json"), reverse=True)[: max(limit, 1)]
+    payload = []
+    for f in files:
+        try:
+            payload.append(json.loads(f.read_text()))
+        except Exception:
+            continue
+    return {"count": len(payload), "items": payload}
 
 
 @app.get("/health")
 def health():
     return {
         "status": "ok",
-        "model_loaded": interpreter is not None,
-        "input_shape": input_shape.tolist() if input_shape is not None else None,
+        "model_loaded": audio.interpreter is not None,
+        "input_shape": audio.input_shape.tolist() if audio.input_shape is not None else None,
+        "recordings_dir": str(audio.RECORDINGS_DIR.resolve()),
     }

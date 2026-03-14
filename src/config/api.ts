@@ -22,11 +22,6 @@ export function getApiUrl(): string {
   return _apiUrl;
 }
 
-export async function resetApiUrl(): Promise<void> {
-  _apiUrl = ENV_API_URL;
-  await AsyncStorage.removeItem(STORAGE_KEY);
-}
-
 export async function apiFetch(
   path: string,
   options: RequestInit = {},
@@ -41,8 +36,55 @@ export async function apiFetch(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(`${_apiUrl}${path}`, {
-    ...options,
-    headers,
-  });
+  return retryFetch(
+    () =>
+      fetch(`${_apiUrl}${path}`, {
+        ...options,
+        headers,
+      }),
+    3
+  );
+}
+
+export function isLikelyOfflineError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes("network request failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror")
+  );
+}
+
+export function parseApiError(body: any, status: number): string {
+  // FastAPI/Pydantic commonly returns validation issues as detail[]
+  if (Array.isArray(body?.detail)) {
+    const messages = body.detail
+      .map((entry: any) => entry?.msg ?? String(entry))
+      .filter(Boolean)
+      .join("; ");
+    if (messages) return messages;
+  }
+  if (typeof body?.detail === "string") return body.detail;
+  if (typeof body?.error?.message === "string") return body.error.message;
+  return `Request failed (${status})`;
+}
+
+export async function retryFetch<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  initialDelayMs = 300
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxRetries) break;
+      const waitMs = initialDelayMs * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  throw lastError;
 }

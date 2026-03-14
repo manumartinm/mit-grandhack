@@ -1,4 +1,5 @@
 import type { SignalQuality } from '../../types';
+import { logger } from '../../utils/logger';
 
 class CoughRecorder {
   private recording: any = null;
@@ -17,7 +18,9 @@ class CoughRecorder {
       );
       this.recording = recording;
     } catch (error) {
-      console.warn('Audio recording not available:', error);
+      logger.warn('Audio recording not available', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -29,7 +32,9 @@ class CoughRecorder {
       this.recording = null;
       return this.recordingUri;
     } catch (error) {
-      console.warn('Stop recording error:', error);
+      logger.warn('Stop recording error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }

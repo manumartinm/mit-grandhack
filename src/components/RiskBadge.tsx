@@ -1,25 +1,51 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { colors } from '../theme/colors';
-import { radius, spacing } from '../theme/spacing';
-import { typography } from '../theme/typography';
-import type { RiskBucket } from '../types';
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
+import { colors } from "../theme/colors";
+import { radius, spacing } from "../theme/spacing";
+import { typography } from "../theme/typography";
+import type { RiskBucket } from "../types";
 
 interface RiskBadgeProps {
   risk: RiskBucket;
   label?: string;
-  size?: 'sm' | 'lg';
+  size?: "sm" | "lg";
 }
 
-const bgMap = { low: colors.risk.lowBg, medium: colors.risk.mediumBg, high: colors.risk.highBg };
+const bgMap = {
+  low: colors.risk.lowBg,
+  medium: colors.risk.mediumBg,
+  high: colors.risk.highBg,
+};
 
-export function RiskBadge({ risk, label, size = 'sm' }: RiskBadgeProps) {
-  const labels = { low: 'LOW', medium: 'MED', high: 'HIGH' };
+export function RiskBadge({ risk, label, size = "sm" }: RiskBadgeProps) {
+  const labels = { low: "Low Risk", medium: "Medium Risk", high: "HIGH RISK" };
+  const isHigh = risk === "high";
 
   return (
-    <View style={[styles.base, { backgroundColor: bgMap[risk] }, size === 'lg' && styles.large]}>
-      <View style={[styles.dot, { backgroundColor: colors.risk[risk] }]} />
-      <Text style={[styles.text, { color: colors.risk[risk] }, size === 'lg' && typography.caption]}>
+    <View
+      style={[
+        styles.base,
+        isHigh ? styles.highBadge : { backgroundColor: bgMap[risk] },
+        size === "lg" && styles.large,
+      ]}
+      accessibilityRole="text"
+      accessibilityLabel={`Risk level: ${label ?? labels[risk]}`}
+    >
+      <View
+        style={[
+          styles.dot,
+          { backgroundColor: isHigh ? "#fff" : colors.risk[risk] },
+        ]}
+        importantForAccessibility="no"
+      />
+      <Text
+        style={[
+          styles.text,
+          { color: isHigh ? "#fff" : colors.risk[risk] },
+          size === "lg" && styles.textLg,
+        ]}
+        maxFontSizeMultiplier={1.5}
+      >
         {label ?? labels[risk]}
       </Text>
     </View>
@@ -28,24 +54,35 @@ export function RiskBadge({ risk, label, size = 'sm' }: RiskBadgeProps) {
 
 const styles = StyleSheet.create({
   base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
     borderRadius: radius.full,
-    gap: 4,
+    gap: 5,
+  },
+  highBadge: {
+    backgroundColor: colors.risk.high,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
   },
   large: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.xs + 2,
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   text: {
-    ...typography.small,
-    fontSize: 10,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 16,
+    letterSpacing: 0.3,
+  },
+  textLg: {
+    fontSize: 15,
+    lineHeight: 20,
   },
 });

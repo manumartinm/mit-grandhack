@@ -13,6 +13,6 @@ export const typography: Record<string, TextStyle> = {
   body: { fontSize: 16, fontWeight: '400', lineHeight: 22 },
   bodyBold: { fontSize: 16, fontWeight: '600', lineHeight: 22 },
   caption: { fontSize: 13, fontWeight: '500', lineHeight: 18 },
-  small: { fontSize: 11, fontWeight: '500', lineHeight: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
+  small: { fontSize: 12, fontWeight: '500', lineHeight: 16, letterSpacing: 0.4, textTransform: 'uppercase' },
   stat: { fontSize: 40, fontWeight: '700', lineHeight: 48, letterSpacing: -1 },
 };

@@ -1,16 +1,23 @@
-import React from 'react';
-import { View, ViewProps, StyleSheet } from 'react-native';
-import { colors } from '../theme/colors';
-import { radius, spacing } from '../theme/spacing';
+import React from "react";
+import { View, ViewProps, StyleSheet } from "react-native";
+import { colors } from "../theme/colors";
+import { radius, spacing } from "../theme/spacing";
+import { glass } from "../theme/glass";
 
 interface CardProps extends ViewProps {
-  variant?: 'default' | 'elevated' | 'risk';
-  riskLevel?: 'low' | 'medium' | 'high';
+  variant?: "default" | "elevated" | "risk";
+  riskLevel?: "low" | "medium" | "high";
 }
 
-export function Card({ variant = 'default', riskLevel, style, children, ...props }: CardProps) {
+export function Card({
+  variant = "default",
+  riskLevel,
+  style,
+  children,
+  ...props
+}: CardProps) {
   const borderColor =
-    variant === 'risk' && riskLevel
+    variant === "risk" && riskLevel
       ? colors.risk[riskLevel]
       : colors.border.subtle;
 
@@ -18,8 +25,11 @@ export function Card({ variant = 'default', riskLevel, style, children, ...props
     <View
       style={[
         styles.base,
-        variant === 'elevated' && styles.elevated,
-        variant === 'risk' && { borderLeftWidth: 3, borderLeftColor: borderColor },
+        variant === "elevated" && styles.elevated,
+        variant === "risk" && {
+          borderLeftWidth: 3,
+          borderLeftColor: borderColor,
+        },
         style,
       ]}
       {...props}
@@ -31,18 +41,19 @@ export function Card({ variant = 'default', riskLevel, style, children, ...props
 
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: colors.bg.card,
+    backgroundColor: glass.surface.default,
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border.default,
+    borderColor: glass.border.default,
   },
   elevated: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    borderColor: colors.border.subtle,
+    backgroundColor: glass.surface.elevated,
+    shadowColor: glass.shadow.color,
+    shadowOffset: { width: 0, height: glass.shadow.offsetY },
+    shadowOpacity: glass.shadow.opacity,
+    shadowRadius: glass.shadow.radius,
+    elevation: glass.shadow.elevation,
+    borderColor: glass.border.strong,
   },
 });

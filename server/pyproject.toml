@@ -10,6 +10,7 @@ dependencies = [
     "tensorflow",
     "librosa",
     "numpy",
+    "scipy",
     "python-multipart",
     "sqlalchemy",
     "pymysql",
@@ -17,4 +18,6 @@ dependencies = [
     "passlib[bcrypt]",
     "python-dotenv",
     "pydantic[email]",
+    "pydantic-ai[openai]",
+    "openai",
 ]
