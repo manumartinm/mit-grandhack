@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import { Audio } from 'expo-av';
 
@@ -11,6 +11,8 @@ const BLOCK_ALIGN = CHANNELS * (BIT_DEPTH / 8);             // 2
 
 // ─── Connection constants ─────────────────────────────────────────────────────
 const DEVICE_NAME = 'ESP32_MIC';
+const DEVICE_MAC = '4C:C3:82:C4:7D:E2';
+const SPP_UUID = '00001101-0000-1000-8000-00805F9B34FB';
 const DISCOVERY_TIMEOUT_MS = 12000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,6 +72,34 @@ class SppService {
     return this.connectionState;
   }
 
+  private async ensureBluetoothPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const sdk = Number(Platform.Version);
+      if (sdk >= 31) {
+        const result = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+        return (
+          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] ===
+            PermissionsAndroid.RESULTS.GRANTED &&
+          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] ===
+            PermissionsAndroid.RESULTS.GRANTED
+        );
+      }
+
+      const loc = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+      );
+      return loc === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (e: any) {
+      this.onError?.(e?.message ?? 'Failed to request Bluetooth permissions');
+      return false;
+    }
+  }
+
   private resetParser() {
     this.parserState = 'WAIT_TEXT';
     this.byteBuffer = [];
@@ -87,6 +117,15 @@ class SppService {
 
     this.setState('scanning');
     try {
+      const hasPerms = await this.ensureBluetoothPermissions();
+      if (!hasPerms) {
+        this.setState('error');
+        this.onError?.(
+          'Bluetooth permissions are required. Please allow Nearby Devices and Bluetooth permissions.'
+        );
+        return [];
+      }
+
       // Lazy-import to avoid loading on iOS
       const RNBtClassic = require('react-native-bluetooth-classic').default;
 
@@ -97,7 +136,11 @@ class SppService {
 
       // 1. Check already-bonded devices first — instant, no radio scan needed
       const bonded: any[] = await RNBtClassic.getBondedDevices();
-      const esp32Bonded = bonded.filter((d: any) => d.name === DEVICE_NAME);
+      const esp32Bonded = bonded.filter((d: any) => {
+        const name = String(d.name ?? '').trim();
+        const address = String(d.address ?? '').toUpperCase();
+        return name === DEVICE_NAME || address === DEVICE_MAC;
+      });
       if (esp32Bonded.length > 0) {
         this.setState('idle');
         return esp32Bonded.map((d: any) => ({
@@ -111,7 +154,9 @@ class SppService {
       // 2. Fall back to active discovery (requires discoverable mode on ESP32)
       const found: SppDevice[] = [];
       const sub = RNBtClassic.onDeviceDiscovered((device: any) => {
-        if (device.name === DEVICE_NAME) {
+        const name = String(device.name ?? '').trim();
+        const address = String(device.address ?? '').toUpperCase();
+        if (name === DEVICE_NAME || address === DEVICE_MAC) {
           found.push({
             id: device.address,
             name: device.name ?? DEVICE_NAME,
@@ -139,12 +184,22 @@ class SppService {
   async connect(deviceId: string): Promise<void> {
     this.setState('connecting');
     try {
+      const hasPerms = await this.ensureBluetoothPermissions();
+      if (!hasPerms) {
+        this.setState('error');
+        this.onError?.(
+          'Bluetooth permissions are required. Please allow Nearby Devices and Bluetooth permissions.'
+        );
+        throw new Error('Bluetooth permissions denied');
+      }
+
       const RNBtClassic = require('react-native-bluetooth-classic').default;
 
       // ISO-8859-1 (Latin-1) maps bytes 0x00–0xFF losslessly — required for PCM
       const device = await RNBtClassic.connectToDevice(deviceId, {
         delimiter: '',
         charset: 'ISO-8859-1',
+        uuid: SPP_UUID,
       });
 
       this.connectedDevice = device;
@@ -185,6 +240,10 @@ class SppService {
   async sendRecord(): Promise<void> {
     if (!this.connectedDevice) {
       this.onError?.('Not connected to ESP32');
+      return;
+    }
+    if (this.connectionState === 'recording' || this.connectionState === 'receiving') {
+      this.onStatusMessage?.("[WARN] Ignored: device is busy recording/transferring.");
       return;
     }
     try {

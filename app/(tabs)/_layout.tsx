@@ -54,7 +54,7 @@ export default function TabsLayout() {
                       ? "Community Dashboard"
                       : route.name === "doctor-chat"
                         ? "Doctor Support"
-                        : "Sthetho Scan"
+                        : "Stethoscan"
             }
             subtitle={
               route.name === "home"

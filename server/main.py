@@ -9,12 +9,14 @@ from sqlalchemy import inspect, text
 
 import audio
 from database import Base, engine
+from iris_client import iris_vector_client
 from routers import ai as ai_router
 from routers import auth as auth_router
 from routers import communications as communications_router
+from routers import fhir as fhir_router
 from routers import patients as patients_router
 
-app = FastAPI(title="PneumoScan Inference API")
+app = FastAPI(title="Stethoscan Inference API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +29,7 @@ app.include_router(auth_router.router)
 app.include_router(patients_router.router)
 app.include_router(communications_router.router)
 app.include_router(ai_router.router)
+app.include_router(fhir_router.router)
 
 
 def _patch_columns(table: str, columns: dict[str, str]) -> None:
@@ -70,8 +73,27 @@ def on_startup():
     Base.metadata.create_all(bind=engine)   # creates any NEW tables (e.g. screening_sessions)
     _ensure_user_columns()
     _ensure_patient_columns()
+    _patch_columns(
+        "patients",
+        {
+            "fhir_id": "ALTER TABLE patients ADD COLUMN fhir_id VARCHAR(128) NULL",
+        },
+    )
+    _patch_columns(
+        "medical_records",
+        {
+            "created_by": "ALTER TABLE medical_records ADD COLUMN created_by INT NULL",
+        },
+    )
+    _patch_columns(
+        "screening_sessions",
+        {
+            "created_by": "ALTER TABLE screening_sessions ADD COLUMN created_by INT NULL",
+        },
+    )
     audio.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     audio.load_model()
+    iris_vector_client.ensure_table()
 
 
 @app.post("/predict")

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Button, Card, RiskBadge } from "../../src/components";
@@ -144,12 +145,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(4,44,83,0.12)",
-    backgroundColor: "rgba(255,255,255,0.82)",
+    backgroundColor:
+      Platform.OS === "android"
+        ? "rgba(255,255,255,0.98)"
+        : "rgba(255,255,255,0.82)",
     padding: 14,
+    overflow: "hidden",
   },
   patientCardActive: {
     borderColor: colors.palette.primaryBlue,
-    backgroundColor: "rgba(24,95,165,0.08)",
+    backgroundColor:
+      Platform.OS === "android"
+        ? "rgba(235,243,251,1)"
+        : "rgba(24,95,165,0.08)",
   },
   patientRow: {
     flexDirection: "row",

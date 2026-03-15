@@ -1,27 +1,30 @@
 {
   "expo": {
-    "name": "PneumoScan",
+    "name": "Stethoscan",
     "slug": "pneumoscan",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/favicon.jpeg",
     "scheme": "pneumoscan",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/favicon.jpeg",
+      "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pneumoscan.app",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "PneumoScan needs Bluetooth to connect to the lung sound wearable device.",
-        "NSMicrophoneUsageDescription": "PneumoScan needs microphone access to record cough sounds for analysis.",
-        "NSLocationWhenInUseUsageDescription": "PneumoScan uses location to detect community outbreak clusters."
+        "NSBluetoothAlwaysUsageDescription": "Stethoscan needs Bluetooth to connect to the lung sound wearable device.",
+        "NSMicrophoneUsageDescription": "Stethoscan needs microphone access to record cough sounds for analysis.",
+        "NSLocationWhenInUseUsageDescription": "Stethoscan uses location to detect community outbreak clusters."
       }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/favicon.jpeg",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.pneumoscan.app",
@@ -42,9 +45,9 @@
       [
         "expo-av",
         {
-          "microphonePermission": "PneumoScan needs microphone access to record cough sounds."
+          "microphonePermission": "Stethoscan needs microphone access to record cough sounds."
         }
-      ],
+      ]
     ],
     "extra": {
       "router": {},

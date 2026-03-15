@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: { color: "#FFFFFF" },
   list: { padding: 16, paddingBottom: 100 },
-  patientCardTouch: { marginBottom: 8, minHeight: 72 },
+  patientCardTouch: { marginBottom: 8, borderRadius: 16, overflow: "hidden" },
   patientCard: {},
   patientRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: {

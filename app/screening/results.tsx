@@ -45,14 +45,13 @@ function buildFallbackTriage(
   const referral = pneumoniaRiskBucket !== "low";
   const isHealthy = topLabel === "Healthy";
   return {
-    verdict:
-      isHealthy
-        ? "No significant respiratory pattern detected"
-        : pneumoniaRiskBucket === "high"
-          ? `High-risk pattern — ${topLabel} most likely`
-          : pneumoniaRiskBucket === "medium"
-            ? `Moderate-risk pattern — ${topLabel} most likely`
-            : `Low-risk pattern — ${topLabel} most likely`,
+    verdict: isHealthy
+      ? "No significant respiratory pattern detected"
+      : pneumoniaRiskBucket === "high"
+        ? `High-risk pattern — ${topLabel} most likely`
+        : pneumoniaRiskBucket === "medium"
+          ? `Moderate-risk pattern — ${topLabel} most likely`
+          : `Low-risk pattern — ${topLabel} most likely`,
     explanation: `Model detected ${topLabel} as the most likely condition (${(topProb * 100).toFixed(1)}%) with ${(confidence * 100).toFixed(0)}% confidence. Use clinical assessment and follow-up to confirm.`,
     warningSigns: [
       "Fast breathing, chest indrawing, or audible distress",
@@ -73,24 +72,37 @@ function buildFallbackTriage(
 // ─── Chart sub-components ────────────────────────────────────────────────────
 
 const CLASS_COLORS: Record<string, string> = {
-  Pneumonia:     colors.palette.urgentCoral,
-  COPD:          "#C05010",
+  Pneumonia: colors.palette.urgentCoral,
+  COPD: "#C05010",
   Bronchiectasis: colors.palette.softCoral,
   Bronchiolitis: "#D97706",
-  URTI:          colors.palette.primaryBlue,
-  Healthy:       "#059669",
+  URTI: colors.palette.primaryBlue,
+  Healthy: "#059669",
 };
 
 // Fixed axis order — Pneumonia at top, then clockwise
-const RADAR_CLASSES = ["Pneumonia", "COPD", "Bronchiectasis", "Bronchiolitis", "URTI", "Healthy"];
-const GRID_LEVELS   = [0.25, 0.5, 0.75, 1.0];
+const RADAR_CLASSES = [
+  "Pneumonia",
+  "COPD",
+  "Bronchiectasis",
+  "Bronchiolitis",
+  "URTI",
+  "Healthy",
+];
+const GRID_LEVELS = [0.25, 0.5, 0.75, 1.0];
 
-function RadarChart({ probs, size }: { probs: Record<string, number>; size: number }) {
-  const N   = RADAR_CLASSES.length;
-  const CX  = size / 2;
-  const CY  = size / 2;
-  const R   = size * 0.30;          // data radius
-  const LR  = R + size * 0.16;      // label ring radius
+function RadarChart({
+  probs,
+  size,
+}: {
+  probs: Record<string, number>;
+  size: number;
+}) {
+  const N = RADAR_CLASSES.length;
+  const CX = size / 2;
+  const CY = size / 2;
+  const R = size * 0.3; // data radius
+  const LR = R + size * 0.16; // label ring radius
 
   const axisAngle = (i: number) => (2 * Math.PI * i) / N - Math.PI / 2;
 
@@ -100,8 +112,10 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
   });
 
   // Determine fill colour from the dominant class
-  const topClass  = RADAR_CLASSES.reduce((best, cls) =>
-    (probs[cls] ?? 0) > (probs[best] ?? 0) ? cls : best, RADAR_CLASSES[0]);
+  const topClass = RADAR_CLASSES.reduce(
+    (best, cls) => ((probs[cls] ?? 0) > (probs[best] ?? 0) ? cls : best),
+    RADAR_CLASSES[0],
+  );
   const fillColor = CLASS_COLORS[topClass] ?? colors.palette.primaryBlue;
 
   // Polygon strings
@@ -136,8 +150,10 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
           return (
             <Line
               key={i}
-              x1={CX} y1={CY}
-              x2={end.x} y2={end.y}
+              x1={CX}
+              y1={CY}
+              x2={end.x}
+              y2={end.y}
               stroke="#DDE4ED"
               strokeWidth="1"
             />
@@ -159,7 +175,8 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
           return (
             <Circle
               key={cls}
-              cx={p.x} cy={p.y}
+              cx={p.x}
+              cy={p.y}
               r="5"
               fill={CLASS_COLORS[cls] ?? fillColor}
               stroke="#fff"
@@ -170,15 +187,16 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
 
         {/* ── Axis labels ──────────────────────────────────────────── */}
         {RADAR_CLASSES.map((cls, i) => {
-          const lp   = polarPt(i, LR);
+          const lp = polarPt(i, LR);
           const anchor =
             lp.x < CX - 8 ? "end" : lp.x > CX + 8 ? "start" : "middle";
-          const pct  = Math.round((probs[cls] ?? 0) * 100);
-          const col  = CLASS_COLORS[cls] ?? fillColor;
+          const pct = Math.round((probs[cls] ?? 0) * 100);
+          const col = CLASS_COLORS[cls] ?? fillColor;
           return (
             <React.Fragment key={cls}>
               <SvgText
-                x={lp.x} y={lp.y - 6}
+                x={lp.x}
+                y={lp.y - 6}
                 textAnchor={anchor}
                 fill="#374151"
                 fontSize="10"
@@ -187,7 +205,8 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
                 {cls}
               </SvgText>
               <SvgText
-                x={lp.x} y={lp.y + 7}
+                x={lp.x}
+                y={lp.y + 7}
                 textAnchor={anchor}
                 fill={col}
                 fontSize="11"
@@ -207,7 +226,12 @@ function RadarChart({ probs, size }: { probs: Record<string, number>; size: numb
       <View style={chart.radarLegend}>
         {RADAR_CLASSES.map((cls) => (
           <View key={cls} style={chart.radarLegendItem}>
-            <View style={[chart.radarLegendDot, { backgroundColor: CLASS_COLORS[cls] }]} />
+            <View
+              style={[
+                chart.radarLegendDot,
+                { backgroundColor: CLASS_COLORS[cls] },
+              ]}
+            />
             <Text style={chart.radarLegendText}>{cls}</Text>
           </View>
         ))}
@@ -258,7 +282,11 @@ function TrendSparkline({
   const polyPoints = coords.map((p) => `${p.x},${p.y}`).join(" ");
 
   const dotColor = (v: number) =>
-    v >= 0.6 ? colors.palette.urgentCoral : v >= 0.3 ? colors.palette.softCoral : "#059669";
+    v >= 0.6
+      ? colors.palette.urgentCoral
+      : v >= 0.3
+        ? colors.palette.softCoral
+        : "#059669";
 
   return (
     <View>
@@ -319,7 +347,6 @@ function TrendSparkline({
   );
 }
 
-
 // ─── Technical tab content ────────────────────────────────────────────────────
 
 function TechnicalTab({
@@ -338,12 +365,20 @@ function TechnicalTab({
   const { width } = useWindowDimensions();
   const cardInnerW = width - 32 - 32;
 
-  const sorted = Object.entries(cnn.classProbabilities).sort(([, a], [, b]) => b - a);
+  const sorted = Object.entries(cnn.classProbabilities).sort(
+    ([, a], [, b]) => b - a,
+  );
   const [topLabel, topProb] = sorted[0] ?? ["Unknown", 0];
 
   const qualityPct = Math.round((cnn.signalQuality?.qualityScore ?? 0) * 100);
-  const qualityLabel = qualityPct >= 70 ? "Good" : qualityPct >= 50 ? "Fair" : "Poor";
-  const qualityColor = qualityPct >= 70 ? "#059669" : qualityPct >= 50 ? colors.palette.softCoral : colors.palette.urgentCoral;
+  const qualityLabel =
+    qualityPct >= 70 ? "Good" : qualityPct >= 50 ? "Fair" : "Poor";
+  const qualityColor =
+    qualityPct >= 70
+      ? "#059669"
+      : qualityPct >= 50
+        ? colors.palette.softCoral
+        : colors.palette.urgentCoral;
 
   return (
     <ScrollView contentContainerStyle={tab.scrollContent}>
@@ -356,7 +391,9 @@ function TechnicalTab({
         </View>
         <View style={tab.metaRow}>
           <View style={tab.metaItem}>
-            <Text style={tab.metaValue}>{(cnn.confidence * 100).toFixed(0)}%</Text>
+            <Text style={tab.metaValue}>
+              {(cnn.confidence * 100).toFixed(0)}%
+            </Text>
             <Text style={tab.metaLabel}>Confidence</Text>
           </View>
           <View style={tab.metaDivider} />
@@ -366,7 +403,9 @@ function TechnicalTab({
           </View>
           <View style={tab.metaDivider} />
           <View style={tab.metaItem}>
-            <Text style={tab.metaValue}>{cnn.signalSource.replace(/_/g, " ")}</Text>
+            <Text style={tab.metaValue}>
+              {cnn.signalSource.replace(/_/g, " ")}
+            </Text>
             <Text style={tab.metaLabel}>Source</Text>
           </View>
         </View>
@@ -376,23 +415,39 @@ function TechnicalTab({
       <Card style={tab.section}>
         <Text style={tab.sectionTitle}>Recording quality</Text>
         <View style={tab.qualityBadgeRow}>
-          <View style={[tab.qualityBadge, { backgroundColor: qualityColor + "18", borderColor: qualityColor + "40" }]}>
-            <Text style={[tab.qualityBadgeText, { color: qualityColor }]}>{qualityLabel} — {qualityPct}%</Text>
+          <View
+            style={[
+              tab.qualityBadge,
+              {
+                backgroundColor: qualityColor + "18",
+                borderColor: qualityColor + "40",
+              },
+            ]}
+          >
+            <Text style={[tab.qualityBadgeText, { color: qualityColor }]}>
+              {qualityLabel} — {qualityPct}%
+            </Text>
           </View>
         </View>
         <View style={tab.metaRow}>
           <View style={tab.metaItem}>
-            <Text style={tab.metaValue}>{(cnn.signalQuality?.noiseFloorDb ?? 0).toFixed(0)} dB</Text>
+            <Text style={tab.metaValue}>
+              {(cnn.signalQuality?.noiseFloorDb ?? 0).toFixed(0)} dB
+            </Text>
             <Text style={tab.metaLabel}>Noise floor</Text>
           </View>
           <View style={tab.metaDivider} />
           <View style={tab.metaItem}>
-            <Text style={tab.metaValue}>{((cnn.signalQuality?.clippingRatio ?? 0) * 100).toFixed(1)}%</Text>
+            <Text style={tab.metaValue}>
+              {((cnn.signalQuality?.clippingRatio ?? 0) * 100).toFixed(1)}%
+            </Text>
             <Text style={tab.metaLabel}>Clipping</Text>
           </View>
           <View style={tab.metaDivider} />
           <View style={tab.metaItem}>
-            <Text style={tab.metaValue}>{(cnn.signalQuality?.durationSec ?? 0).toFixed(1)}s</Text>
+            <Text style={tab.metaValue}>
+              {(cnn.signalQuality?.durationSec ?? 0).toFixed(1)}s
+            </Text>
             <Text style={tab.metaLabel}>Duration</Text>
           </View>
         </View>
@@ -403,13 +458,22 @@ function TechnicalTab({
             <Text style={tab.subSectionTitle}>Quality per zone</Text>
             {zoneResults.map((z) => {
               const pct = Math.round(z.qualityScore * 100);
-              const col = pct >= 70 ? "#059669" : pct >= 50 ? colors.palette.softCoral : colors.palette.urgentCoral;
+              const col =
+                pct >= 70
+                  ? "#059669"
+                  : pct >= 50
+                    ? colors.palette.softCoral
+                    : colors.palette.urgentCoral;
               return (
                 <View key={z.zone} style={tab.zoneRow}>
-                  <Text style={tab.zoneName}>{ZONE_LABEL[z.zone] ?? z.zone}</Text>
+                  <Text style={tab.zoneName}>
+                    {ZONE_LABEL[z.zone] ?? z.zone}
+                  </Text>
                   <View style={tab.zoneRight}>
                     <Text style={[tab.zonePct, { color: col }]}>{pct}%</Text>
-                    <Text style={[tab.zoneStatus, { color: col }]}>{z.passed ? "Pass" : "Fail"}</Text>
+                    <Text style={[tab.zoneStatus, { color: col }]}>
+                      {z.passed ? "Pass" : "Fail"}
+                    </Text>
                   </View>
                 </View>
               );
@@ -420,7 +484,9 @@ function TechnicalTab({
         {preprocessWarnings.length > 0 && (
           <View style={tab.warnBox}>
             {preprocessWarnings.map((w) => (
-              <Text key={w} style={tab.warnText}>⚠ {w}</Text>
+              <Text key={w} style={tab.warnText}>
+                ⚠ {w}
+              </Text>
             ))}
           </View>
         )}
@@ -429,7 +495,9 @@ function TechnicalTab({
       {/* ── Condition breakdown chart ── */}
       <Card style={tab.section}>
         <Text style={tab.sectionTitle}>Condition breakdown</Text>
-        <Text style={tab.chartNote}>Probability of each condition detected by the AI model</Text>
+        <Text style={tab.chartNote}>
+          Probability of each condition detected by the AI model
+        </Text>
         <RadarChart probs={cnn.classProbabilities} size={cardInnerW} />
       </Card>
 
@@ -440,7 +508,6 @@ function TechnicalTab({
           <TrendSparkline sessions={sessions} width={cardInnerW} />
         </Card>
       )}
-
     </ScrollView>
   );
 }
@@ -449,7 +516,8 @@ function TechnicalTab({
 
 export default function ResultsScreen() {
   const router = useRouter();
-  const { selectedPatientId, patients, getSessionsForPatient } = usePatients();
+  const { selectedPatientId, patients, getSessionsForPatient, updateSession } =
+    usePatients();
   const { token, isAuthenticated } = useAuth();
   const patient = patients.find((p) => p.id === selectedPatientId);
   const patientSessions = selectedPatientId
@@ -458,16 +526,27 @@ export default function ResultsScreen() {
   const latestSession = patientSessions[0];
   const cnn = latestSession?.cnnOutput;
   const allRecordings = patientSessions.filter((s) => s.cnnOutput);
+  const sessionNotes = useMemo(() => {
+    try {
+      return JSON.parse(latestSession?.notes ?? "{}");
+    } catch {
+      return {};
+    }
+  }, [latestSession?.notes]);
+
+  const cachedTriage = useMemo<ScreeningTriageInsight | null>(() => {
+    const candidate = sessionNotes?.triageInsight;
+    if (!candidate || typeof candidate !== "object") return null;
+    const verdict = (candidate as Record<string, unknown>).verdict;
+    const explanation = (candidate as Record<string, unknown>).explanation;
+    if (typeof verdict !== "string" || typeof explanation !== "string") return null;
+    return candidate as ScreeningTriageInsight;
+  }, [sessionNotes]);
 
   const preprocessWarnings: string[] = (() => {
-    try {
-      const notes = JSON.parse(latestSession?.notes ?? "{}");
-      return Array.isArray(notes?.preprocessWarnings)
-        ? notes.preprocessWarnings
-        : [];
-    } catch {
-      return [];
-    }
+    return Array.isArray(sessionNotes?.preprocessWarnings)
+      ? sessionNotes.preprocessWarnings
+      : [];
   })();
 
   const [triage, setTriage] = useState<ScreeningTriageInsight | null>(null);
@@ -477,7 +556,9 @@ export default function ResultsScreen() {
 
   React.useEffect(() => {
     if (!cnn) return;
-    const topEntry = Object.entries(cnn.classProbabilities).sort(([, a], [, b]) => b - a)[0] ?? ["Unknown", 0];
+    const topEntry = Object.entries(cnn.classProbabilities).sort(
+      ([, a], [, b]) => b - a,
+    )[0] ?? ["Unknown", 0];
     const fallback = buildFallbackTriage(
       cnn.pneumoniaRiskBucket,
       topEntry[0],
@@ -491,14 +572,30 @@ export default function ResultsScreen() {
       return;
     }
 
+    if (cachedTriage) {
+      setTriage(cachedTriage);
+      return;
+    }
+
     setLoadingTriage(true);
     generateScreeningInsights(token, cnn, patient ?? null, patientSessions)
-      .then(setTriage)
+      .then((insight) => {
+        setTriage(insight);
+        if (!latestSession) return;
+        const mergedNotes = {
+          ...sessionNotes,
+          triageInsight: insight,
+          triageGeneratedAt: new Date().toISOString(),
+        };
+        updateSession(latestSession.id, {
+          notes: JSON.stringify(mergedNotes),
+        });
+      })
       .catch(() => setTriage(fallback))
       .finally(() => setLoadingTriage(false));
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestSession?.id, selectedPatientId, token, isAuthenticated]);
+  }, [latestSession?.id, selectedPatientId, token, isAuthenticated, cachedTriage]);
 
   const riskColor = useMemo(
     () =>
@@ -546,7 +643,10 @@ export default function ResultsScreen() {
         <Header title="Screening Results" subtitle={patient?.name} showBack />
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>No screening result available.</Text>
-          <Button title="Back to Patients" onPress={() => router.replace("/home")} />
+          <Button
+            title="Back to Patients"
+            onPress={() => router.replace("/home")}
+          />
         </View>
       </View>
     );
@@ -565,7 +665,12 @@ export default function ResultsScreen() {
           accessibilityState={{ selected: activeTab === "summary" }}
           accessibilityLabel="Summary tab"
         >
-          <Text style={[styles.tabText, activeTab === "summary" && styles.tabTextActive]}>
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "summary" && styles.tabTextActive,
+            ]}
+          >
             Summary
           </Text>
         </TouchableOpacity>
@@ -576,7 +681,12 @@ export default function ResultsScreen() {
           accessibilityState={{ selected: activeTab === "technical" }}
           accessibilityLabel="Technical details tab"
         >
-          <Text style={[styles.tabText, activeTab === "technical" && styles.tabTextActive]}>
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "technical" && styles.tabTextActive,
+            ]}
+          >
             Technical
           </Text>
         </TouchableOpacity>
@@ -585,24 +695,31 @@ export default function ResultsScreen() {
       {/* ── Summary tab ── */}
       {activeTab === "summary" && (
         <ScrollView contentContainerStyle={styles.content}>
-
           {/* Hero risk banner */}
           <View
-            style={[styles.riskBanner, { backgroundColor: riskBg, borderColor: riskBorder }]}
+            style={[
+              styles.riskBanner,
+              { backgroundColor: riskBg, borderColor: riskBorder },
+            ]}
             accessibilityRole="header"
             accessibilityLabel={`Risk level: ${riskLabel}`}
           >
             <View style={styles.riskLabelRow}>
-              <View style={[styles.riskLabelPill, { backgroundColor: riskColor }]}>
+              <View
+                style={[styles.riskLabelPill, { backgroundColor: riskColor }]}
+              >
                 <Text style={styles.riskLabelText}>{riskLabel}</Text>
               </View>
-              {loadingTriage && <Text style={styles.loadingText}>Updating…</Text>}
+              {loadingTriage && (
+                <Text style={styles.loadingText}>Updating…</Text>
+              )}
             </View>
             <Text style={[styles.triageHeading, { color: riskColor }]}>
               {triage?.verdict ?? "Analyzing results…"}
             </Text>
             <Text style={styles.triageExplanation}>
-              {triage?.explanation ?? "Analyzing latest screening and generating guidance..."}
+              {triage?.explanation ??
+                "Analyzing latest screening and generating guidance..."}
             </Text>
           </View>
 
@@ -625,7 +742,14 @@ export default function ResultsScreen() {
               <Text style={styles.sectionTitle}>Suggested actions</Text>
               {triage.nextActions.map((line) => (
                 <View key={line} style={styles.bulletRow}>
-                  <Text style={[styles.bulletMark, { color: colors.palette.primaryBlue }]}>✓</Text>
+                  <Text
+                    style={[
+                      styles.bulletMark,
+                      { color: colors.palette.primaryBlue },
+                    ]}
+                  >
+                    ✓
+                  </Text>
                   <Text style={styles.bulletText}>{line}</Text>
                 </View>
               ))}
@@ -634,7 +758,9 @@ export default function ResultsScreen() {
 
           {/* ── Next Steps ── */}
           <View style={styles.nextStepsWrap}>
-            <Text style={styles.nextStepsHeading}>What would you like to do?</Text>
+            <Text style={styles.nextStepsHeading}>
+              What would you like to do?
+            </Text>
 
             {cnn.pneumoniaRiskBucket !== "low" ? (
               /* High / Medium risk — two options stacked prominently */
@@ -653,7 +779,9 @@ export default function ResultsScreen() {
                   </View>
                   <View style={styles.stepCardText}>
                     <Text style={styles.stepCardTitle}>Refer to Doctor</Text>
-                    <Text style={styles.stepCardSub}>Connect with a physician now via telemedicine</Text>
+                    <Text style={styles.stepCardSub}>
+                      Connect with a physician now via telemedicine
+                    </Text>
                   </View>
                   <Text style={styles.stepCardArrow}>›</Text>
                 </Pressable>
@@ -674,10 +802,31 @@ export default function ResultsScreen() {
                     <Text style={styles.stepCardIcon}>📋</Text>
                   </View>
                   <View style={styles.stepCardText}>
-                    <Text style={[styles.stepCardTitle, { color: colors.text.primary }]}>Manage Locally</Text>
-                    <Text style={[styles.stepCardSub, { color: colors.text.secondary }]}>Monitor and schedule follow-up</Text>
+                    <Text
+                      style={[
+                        styles.stepCardTitle,
+                        { color: colors.text.primary },
+                      ]}
+                    >
+                      Manage Locally
+                    </Text>
+                    <Text
+                      style={[
+                        styles.stepCardSub,
+                        { color: colors.text.secondary },
+                      ]}
+                    >
+                      Monitor and schedule follow-up
+                    </Text>
                   </View>
-                  <Text style={[styles.stepCardArrow, { color: colors.border.default }]}>›</Text>
+                  <Text
+                    style={[
+                      styles.stepCardArrow,
+                      { color: colors.border.default },
+                    ]}
+                  >
+                    ›
+                  </Text>
                 </Pressable>
               </>
             ) : (
@@ -698,10 +847,31 @@ export default function ResultsScreen() {
                   <Text style={styles.stepCardIcon}>✅</Text>
                 </View>
                 <View style={styles.stepCardText}>
-                  <Text style={[styles.stepCardTitle, { color: colors.text.primary }]}>Manage Locally</Text>
-                  <Text style={[styles.stepCardSub, { color: colors.text.secondary }]}>Monitor and schedule follow-up</Text>
+                  <Text
+                    style={[
+                      styles.stepCardTitle,
+                      { color: colors.text.primary },
+                    ]}
+                  >
+                    Manage Locally
+                  </Text>
+                  <Text
+                    style={[
+                      styles.stepCardSub,
+                      { color: colors.text.secondary },
+                    ]}
+                  >
+                    Monitor and schedule follow-up
+                  </Text>
                 </View>
-                <Text style={[styles.stepCardArrow, { color: colors.border.default }]}>›</Text>
+                <Text
+                  style={[
+                    styles.stepCardArrow,
+                    { color: colors.border.default },
+                  ]}
+                >
+                  ›
+                </Text>
               </Pressable>
             )}
 
@@ -744,7 +914,9 @@ export default function ResultsScreen() {
                 <View key={session.id} style={styles.historyRow}>
                   <Text style={styles.historyDate}>
                     {new Date(session.startedAt).toLocaleDateString(undefined, {
-                      day: "numeric", month: "short", year: "numeric",
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
                     })}
                   </Text>
                   {session.cnnOutput && (
@@ -776,8 +948,18 @@ export default function ResultsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg.primary },
   content: { padding: 16, paddingBottom: 48, gap: 14 },
-  emptyWrap: { flex: 1, justifyContent: "center", paddingHorizontal: 20, gap: 14 },
-  emptyText: { textAlign: "center", color: colors.text.secondary, fontSize: 17, lineHeight: 24 },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    gap: 14,
+  },
+  emptyText: {
+    textAlign: "center",
+    color: colors.text.secondary,
+    fontSize: 17,
+    lineHeight: 24,
+  },
 
   // Tab bar
   tabBar: {
@@ -800,17 +982,52 @@ const styles = StyleSheet.create({
   // Hero risk banner
   riskBanner: { borderRadius: 18, borderWidth: 1.5, padding: 20, gap: 10 },
   riskLabelRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  riskLabelPill: { borderRadius: 9999, paddingHorizontal: 16, paddingVertical: 7 },
-  riskLabelText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800", letterSpacing: 0.5 },
+  riskLabelPill: {
+    borderRadius: 9999,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
+  riskLabelText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
   triageHeading: { fontSize: 20, fontWeight: "800", lineHeight: 28 },
-  triageExplanation: { color: colors.text.primary, lineHeight: 24, fontSize: 16 },
-  loadingText: { color: colors.palette.primaryBlue, fontSize: 13, fontWeight: "500" },
+  triageExplanation: {
+    color: colors.text.primary,
+    lineHeight: 24,
+    fontSize: 16,
+  },
+  loadingText: {
+    color: colors.palette.primaryBlue,
+    fontSize: 13,
+    fontWeight: "500",
+  },
 
   // Warning and action cards
-  warnCard: { borderLeftWidth: 4, borderLeftColor: colors.palette.urgentCoral, gap: 10 },
-  actionsCard: { borderLeftWidth: 4, borderLeftColor: colors.palette.primaryBlue, gap: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.text.primary, marginBottom: 4 },
-  bulletRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 2 },
+  warnCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.palette.urgentCoral,
+    gap: 10,
+  },
+  actionsCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.palette.primaryBlue,
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 2,
+  },
   bulletMark: {
     fontSize: 18,
     color: colors.palette.urgentCoral,
@@ -819,7 +1036,12 @@ const styles = StyleSheet.create({
     width: 20,
     flexShrink: 0,
   },
-  bulletText: { flex: 1, color: colors.text.primary, fontSize: 16, lineHeight: 26 },
+  bulletText: {
+    flex: 1,
+    color: colors.text.primary,
+    fontSize: 16,
+    lineHeight: 26,
+  },
 
   // Next Steps section
   nextStepsWrap: {
@@ -870,8 +1092,17 @@ const styles = StyleSheet.create({
   stepCardIcon: { fontSize: 20 },
   stepCardText: { flex: 1, gap: 2 },
   stepCardTitle: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
-  stepCardSub: { fontSize: 13, color: "rgba(255,255,255,0.82)", fontWeight: "400" },
-  stepCardArrow: { fontSize: 24, fontWeight: "300", color: "#FFFFFF", lineHeight: 28 },
+  stepCardSub: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.82)",
+    fontWeight: "400",
+  },
+  stepCardArrow: {
+    fontSize: 24,
+    fontWeight: "300",
+    color: "#FFFFFF",
+    lineHeight: 28,
+  },
 
   // Secondary row (Repeat + Done)
   stepSecondaryRow: {
@@ -925,7 +1156,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border.default,
   },
   actionBtnLabel: { fontSize: 18, fontWeight: "700", color: "#FFFFFF" },
-  actionBtnSub: { fontSize: 13, color: "rgba(255,255,255,0.85)", fontWeight: "500" },
+  actionBtnSub: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "500",
+  },
 
   // Decision
   decisionCard: { borderWidth: 1, borderColor: "rgba(4,44,83,0.1)" },
@@ -936,10 +1171,20 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  decisionValue: { fontSize: 17, color: colors.text.primary, marginTop: 4, fontWeight: "600" },
+  decisionValue: {
+    fontSize: 17,
+    color: colors.text.primary,
+    marginTop: 4,
+    fontWeight: "600",
+  },
 
   // History
-  historyTitle: { fontSize: 16, fontWeight: "700", color: colors.text.primary, marginBottom: 10 },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text.primary,
+    marginBottom: 10,
+  },
   historyRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -948,7 +1193,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(4,44,83,0.08)",
   },
-  historyDate: { color: colors.text.secondary, fontSize: 15, fontWeight: "500" },
+  historyDate: {
+    color: colors.text.secondary,
+    fontSize: 15,
+    fontWeight: "500",
+  },
 });
 
 // ─── Technical tab styles ─────────────────────────────────────────────────────
@@ -971,7 +1220,12 @@ const tab = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  chartNote: { fontSize: 14, color: colors.text.muted, marginBottom: 12, lineHeight: 20 },
+  chartNote: {
+    fontSize: 14,
+    color: colors.text.muted,
+    marginBottom: 12,
+    lineHeight: 20,
+  },
 
   // Detected condition
   conditionRow: {
@@ -980,8 +1234,16 @@ const tab = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 14,
   },
-  conditionLabel: { fontSize: 22, fontWeight: "800", color: colors.text.primary },
-  conditionPct: { fontSize: 28, fontWeight: "800", color: colors.palette.primaryBlue },
+  conditionLabel: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.text.primary,
+  },
+  conditionPct: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.palette.primaryBlue,
+  },
 
   // Meta row (confidence / trend / source)
   metaRow: {
@@ -991,9 +1253,18 @@ const tab = StyleSheet.create({
     paddingTop: 12,
   },
   metaItem: { flex: 1, alignItems: "center", gap: 3 },
-  metaValue: { fontSize: 15, fontWeight: "700", color: colors.text.primary, textAlign: "center" },
+  metaValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text.primary,
+    textAlign: "center",
+  },
   metaLabel: { fontSize: 12, color: colors.text.muted, textAlign: "center" },
-  metaDivider: { width: 1, backgroundColor: "rgba(4,44,83,0.1)", marginVertical: 2 },
+  metaDivider: {
+    width: 1,
+    backgroundColor: "rgba(4,44,83,0.1)",
+    marginVertical: 2,
+  },
 
   // Quality badge
   qualityBadgeRow: { marginBottom: 14 },
@@ -1031,18 +1302,30 @@ const tab = StyleSheet.create({
     gap: 6,
   },
   warnText: { fontSize: 14, color: "#92400E", lineHeight: 20 },
-
 });
 
 // ─── Retained chart styles (used by RadarChart, TrendSparkline) ──────────────
 
 const chart = StyleSheet.create({
   radarLegend: {
-    flexDirection: "row", flexWrap: "wrap", justifyContent: "center",
-    gap: 10, marginTop: 4, marginBottom: 4,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 4,
   },
   radarLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   radarLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  radarLegendText: { fontSize: 11, color: colors.text.secondary, fontWeight: "500" },
-  trendLabel: { fontSize: 13, color: colors.text.muted, marginBottom: 6, fontWeight: "500" },
+  radarLegendText: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    fontWeight: "500",
+  },
+  trendLabel: {
+    fontSize: 13,
+    color: colors.text.muted,
+    marginBottom: 6,
+    fontWeight: "500",
+  },
 });

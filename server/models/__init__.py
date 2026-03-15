@@ -57,6 +57,7 @@ class Patient(Base):
 
     # Remaining extended data as JSON (comorbidities, vaccinations, etc.)
     notes = Column(Text, nullable=True)
+    fhir_id = Column(String(128), nullable=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -82,6 +83,7 @@ class ScreeningSession(Base):
     # Client-generated UUID — allows safe idempotent upserts.
     id = Column(String(64), primary_key=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     asha_worker_id = Column(String(64), nullable=True)
 
     started_at = Column(DateTime, nullable=False)
@@ -118,6 +120,7 @@ class MedicalRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     record_type = Column(
         Enum(
             "lab_result", "prescription", "diagnosis", "imaging", "other",

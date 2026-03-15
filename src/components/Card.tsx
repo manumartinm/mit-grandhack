@@ -1,5 +1,5 @@
 import React from "react";
-import { View, ViewProps, StyleSheet } from "react-native";
+import { View, ViewProps, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { glass } from "../theme/glass";
@@ -41,14 +41,17 @@ export function Card({
 
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: glass.surface.default,
+    backgroundColor:
+      Platform.OS === "android" ? "rgba(255, 255, 255, 0.96)" : glass.surface.default,
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: glass.border.default,
+    overflow: "hidden",
   },
   elevated: {
-    backgroundColor: glass.surface.elevated,
+    backgroundColor:
+      Platform.OS === "android" ? "rgba(255, 255, 255, 0.98)" : glass.surface.elevated,
     shadowColor: glass.shadow.color,
     shadowOffset: { width: 0, height: glass.shadow.offsetY },
     shadowOpacity: glass.shadow.opacity,

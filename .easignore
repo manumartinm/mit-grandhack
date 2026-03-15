@@ -1,0 +1,35 @@
+# Mobile build only: exclude backend/infra from EAS upload archive.
+server/
+
+# Local/dev artifacts
+.git/
+.cursor/
+.expo/
+.venv/
+**/.venv/
+node_modules/
+**/node_modules/
+
+# Build outputs and caches
+dist/
+web-build/
+coverage/
+*.tsbuildinfo
+
+# Logs and large raw data
+*.log
+*.pcm
+*.wav
+*.mp3
+*.m4a
+*.tflite
+
+# Local environment and secrets
+.env
+.env.local
+.env*.local
+server/.env
+server/.env.local
+
+# Infra/ops files not needed for app binary
+docker-compose.yml

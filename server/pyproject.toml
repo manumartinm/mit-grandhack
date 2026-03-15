@@ -18,6 +18,8 @@ dependencies = [
     "passlib[bcrypt]",
     "python-dotenv",
     "pydantic[email]",
-    "pydantic-ai[openai]",
+    "pydantic-ai",
     "openai",
+    "httpx",
+    "intersystems-irispython",
 ]

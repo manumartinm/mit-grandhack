@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+recordings/
+*.pcm
+.env
+.venv/
+venv/
+uv.lock
+dist/
+build/
+lung_cnn.tflite

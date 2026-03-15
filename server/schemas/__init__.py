@@ -89,6 +89,7 @@ class PatientOut(BaseModel):
     asha_worker_id: Optional[str]
     weight_kg: Optional[float]
     notes: Optional[str]
+    fhir_id: Optional[str]
     created_by: int
     created_at: datetime
     updated_at: datetime
@@ -107,6 +108,7 @@ class MedicalRecordCreate(BaseModel):
 class MedicalRecordOut(BaseModel):
     id: int
     patient_id: int
+    created_by: Optional[int] = None
     record_type: str
     title: str
     content: str
@@ -140,6 +142,7 @@ class ScreeningSessionCreate(BaseModel):
 class ScreeningSessionOut(BaseModel):
     id: str
     patient_id: int
+    created_by: Optional[int] = None
     asha_worker_id: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]

@@ -1,0 +1,60 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pneumoscan
+      MYSQL_USER: pneumo
+      MYSQL_PASSWORD: pneumo123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./server/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  iris:
+    image: intersystemsdc/irishealth-community:latest
+    restart: unless-stopped
+    ports:
+      - "1972:1972"
+      - "52773:52773"
+    volumes:
+      - iris-data:/usr/irissys/mgr
+    command: --check-caps false
+
+  backend:
+    build: ./server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://pneumo:pneumo123@mysql:3306/pneumoscan
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-1440}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      IRIS_HOST: iris
+      IRIS_PORT: "52773"
+      IRIS_NATIVE_PORT: "1972"
+      IRIS_USER: ${IRIS_USER:-_SYSTEM}
+      IRIS_PASSWORD: ${IRIS_PASSWORD:-SYS}
+      IRIS_NAMESPACE: ${IRIS_NAMESPACE:-USER}
+      IRIS_FHIR_BASE: http://iris:52773/fhir/r4
+    depends_on:
+      mysql:
+        condition: service_healthy
+      iris:
+        condition: service_started
+    volumes:
+      - recordings-data:/app/recordings
+
+volumes:
+  mysql-data:
+  iris-data:
+  recordings-data:

@@ -223,3 +223,23 @@ export async function createSession(
   }
   return res.json();
 }
+
+export async function updateSession(
+  patientId: number,
+  sessionId: string,
+  payload: CreateSessionPayload,
+  token: string
+): Promise<ServerScreeningSession> {
+  const res = await apiFetch(
+    `/patients/${patientId}/sessions/${sessionId}`,
+    { method: "PUT", body: JSON.stringify(payload) },
+    token
+  );
+  if (!res.ok) {
+    throw await buildPatientApiError(
+      res,
+      `Failed to update session (${res.status})`
+    );
+  }
+  return res.json();
+}

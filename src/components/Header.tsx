@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -37,7 +37,11 @@ export function Header({
     <View style={styles.container}>
       <View style={styles.left}>
         <View style={styles.logoBadge}>
-          <Ionicons name="pulse-outline" size={16} color="#FFFFFF" />
+          <Image
+            source={require("../../assets/favicon.jpeg")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         {showBack && (
           <TouchableOpacity
@@ -56,7 +60,7 @@ export function Header({
           </TouchableOpacity>
         )}
         <View>
-          <Text style={styles.brand}>Sthetho Scan</Text>
+          <Text style={styles.brand}>Stethoscan</Text>
           <Text style={styles.title}>{title}</Text>
           {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         </View>
@@ -103,9 +107,16 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: colors.palette.primaryBlue,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(29,68,102,0.16)",
+    overflow: "hidden",
+  },
+  logoImage: {
+    width: 18,
+    height: 18,
   },
   backBtn: {
     width: 48,

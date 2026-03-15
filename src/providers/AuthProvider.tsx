@@ -85,6 +85,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ).catch(() => {});
   }, [user, profile, token, isAuthenticated]);
 
+  useEffect(() => {
+    if (!hydrated.current || !token || !isConnected) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await apiFetch("/auth/me", {}, token);
+        if (cancelled) return;
+
+        if (res.status === 401) {
+          // Token is stale/invalid (common after DB reset). Clear local auth state.
+          setUser(null);
+          setProfile(null);
+          setToken(null);
+          setIsAuthenticated(false);
+          await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+          setError("Session expired. Please sign in again.");
+          return;
+        }
+
+        if (!res.ok) return;
+        const me: AuthUser = await res.json();
+        if (!cancelled) {
+          setUser(me);
+          setIsAuthenticated(true);
+        }
+      } catch {
+        // Non-auth network failures should not force logout.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isConnected]);
+
   const login = useCallback(
     async (email: string, password: string) => {
       setIsLoading(true);

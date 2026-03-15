@@ -22,7 +22,9 @@ import {
   deleteMedicalRecord as apiDeleteMedicalRecord,
   deletePatient as apiDeletePatient,
   createSession as apiCreateSession,
+  updateSession as apiUpdateSession,
   type CreateMedicalRecordPayload,
+  type CreateSessionPayload,
   type ServerPatient,
   type ServerMedicalRecord,
   type CreatePatientPayload,
@@ -95,7 +97,8 @@ function serverToLocal(sp: ServerPatient): Patient {
     id: String(sp.id),
     name: sp.full_name,
     age: sp.age_years ?? extra.age ?? 0,
-    sex: (extra.sex as Patient["sex"]) ?? (sp.gender as Patient["sex"]) ?? "other",
+    sex:
+      (extra.sex as Patient["sex"]) ?? (sp.gender as Patient["sex"]) ?? "other",
     village: sp.village ?? extra.village ?? "",
     ashaWorkerId: sp.asha_worker_id ?? extra.ashaWorkerId ?? "",
     comorbidities: extra.comorbidities ?? [],
@@ -131,6 +134,28 @@ function localToCreatePayload(p: Patient): CreatePatientPayload {
   };
 }
 
+function localSessionToPayload(s: ScreeningSession): CreateSessionPayload {
+  return {
+    id: s.id,
+    asha_worker_id: s.ashaWorkerId || null,
+    started_at: s.startedAt,
+    completed_at: s.completedAt || null,
+    signal_source: s.signalSource || null,
+    risk_bucket: s.cnnOutput?.pneumoniaRiskBucket || null,
+    confidence: s.cnnOutput?.confidence ?? null,
+    requires_escalation:
+      s.cnnOutput?.guardrails.requiresDoctorEscalation ?? false,
+    cnn_output: (s.cnnOutput as unknown as Record<string, any>) ?? null,
+    symptoms: s.symptoms,
+    zone_results: (s.zoneResults as unknown as Record<string, any>[]) ?? null,
+    notes: s.notes || null,
+    gps_lat: s.gpsLat ?? null,
+    gps_lon: s.gpsLon ?? null,
+    referral_status: s.referralStatus || null,
+    referral_timestamp: s.referralTimestamp || null,
+  };
+}
+
 function serverMedicalToLocal(rec: ServerMedicalRecord): MedicalRecord {
   return {
     id: rec.id,
@@ -145,7 +170,7 @@ function serverMedicalToLocal(rec: ServerMedicalRecord): MedicalRecord {
 
 export function PatientProvider({ children }: { children: React.ReactNode }) {
   const { isConnected } = useNetwork();
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, user: authUser } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [sessions, setSessions] = useState<ScreeningSession[]>([]);
   const [medicalRecordsByPatient, setMedicalRecordsByPatient] = useState<
@@ -156,12 +181,17 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
   );
   const [isSyncing, setIsSyncing] = useState(false);
   const hydrated = useRef(false);
+  const prevAuthUserIdRef = useRef<number | null | undefined>(undefined);
   // Keep refs so the auto-sync effect can read current state without
   // being added to its dependency array (avoids re-running on every change).
   const patientsRef = useRef(patients);
-  useEffect(() => { patientsRef.current = patients; }, [patients]);
+  useEffect(() => {
+    patientsRef.current = patients;
+  }, [patients]);
   const sessionsRef = useRef(sessions);
-  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   useEffect(() => {
     (async () => {
@@ -195,6 +225,33 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     ).catch(() => {});
   }, [patients, sessions, medicalRecordsByPatient, selectedPatientId]);
 
+  // Prevent cross-user cache reuse after account switch/sign-out.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    const currentUserId = authUser?.id ?? null;
+    const previousUserId = prevAuthUserIdRef.current;
+    if (previousUserId === undefined) {
+      prevAuthUserIdRef.current = currentUserId;
+      return;
+    }
+    if (previousUserId !== currentUserId) {
+      setPatients([]);
+      setSessions([]);
+      setMedicalRecordsByPatient({});
+      setSelectedPatientId(null);
+    }
+    prevAuthUserIdRef.current = currentUserId;
+  }, [authUser?.id]);
+
+  // Keep selected patient in sync with owned patient list.
+  useEffect(() => {
+    if (!selectedPatientId) return;
+    const exists = patients.some((p) => p.id === selectedPatientId);
+    if (!exists) {
+      setSelectedPatientId(patients[0]?.id ?? null);
+    }
+  }, [patients, selectedPatientId]);
+
   const addPatient = useCallback((patient: Patient) => {
     setPatients((prev) => [...prev, patient]);
   }, []);
@@ -208,17 +265,52 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
     [patients],
   );
 
-  const addSession = useCallback((session: ScreeningSession) => {
-    setSessions((prev) => [...prev, session]);
-  }, []);
+  const addSession = useCallback(
+    (session: ScreeningSession) => {
+      setSessions((prev) => [...prev, session]);
+
+      // Online-first: persist immediately when possible, otherwise keep local.
+      if (!isConnected || !token || !isAuthenticated || !session.cnnOutput) return;
+      const numericPatientId = Number(session.patientId);
+      if (isNaN(numericPatientId)) return;
+      void apiCreateSession(
+        numericPatientId,
+        localSessionToPayload(session),
+        token,
+      ).catch(() => {
+        // Keep local; periodic sync will retry.
+      });
+    },
+    [isConnected, token, isAuthenticated],
+  );
 
   const updateSession = useCallback(
     (id: string, updates: Partial<ScreeningSession>) => {
+      const currentSession = sessionsRef.current.find((s) => s.id === id) ?? null;
+      const mergedSession = currentSession
+        ? ({ ...currentSession, ...updates } as ScreeningSession)
+        : null;
       setSessions((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+        prev.map((s) => {
+          if (s.id !== id) return s;
+          return { ...s, ...updates };
+        }),
       );
+
+      // Online-first update sync; fallback remains local.
+      if (!mergedSession || !isConnected || !token || !isAuthenticated) return;
+      const numericPatientId = Number(mergedSession.patientId);
+      if (isNaN(numericPatientId) || !mergedSession.cnnOutput) return;
+      void apiUpdateSession(
+        numericPatientId,
+        mergedSession.id,
+        localSessionToPayload(mergedSession),
+        token,
+      ).catch(() => {
+        // Keep local; periodic sync will retry.
+      });
     },
-    [],
+    [isConnected, token, isAuthenticated],
   );
 
   const getSessionsForPatient = useCallback(
@@ -448,7 +540,12 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
             setPatients((prev) =>
               prev.map((p) =>
                 p.id === oldId
-                  ? { ...p, id: newId, createdAt: created.created_at, updatedAt: created.updated_at }
+                  ? {
+                      ...p,
+                      id: newId,
+                      createdAt: created.created_at,
+                      updatedAt: created.updated_at,
+                    }
                   : p,
               ),
             );
@@ -463,50 +560,51 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
               return { ...rest, [newId]: recs };
             });
             setSelectedPatientId((prev) => (prev === oldId ? newId : prev));
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
         // 2. Pull the authoritative patient list from the server.
         const serverPatients = await apiFetchPatients(token);
         const mapped = serverPatients.map(serverToLocal);
         setPatients((prev) => {
           const serverIds = new Set(mapped.map((p) => p.id));
-          const stillLocal = prev.filter((p) => !serverIds.has(p.id));
+          const stillLocal = prev.filter(
+            (p) => p.id.startsWith("local-") && !serverIds.has(p.id),
+          );
           return [...mapped, ...stillLocal];
         });
+        const ownedIds = new Set(mapped.map((p) => p.id));
+        setSelectedPatientId((prev) =>
+          prev && ownedIds.has(prev) ? prev : mapped[0]?.id ?? null,
+        );
 
         // 3. Push any screening sessions that only exist locally.
         //    We use the current sessions ref to avoid stale closure issues.
         const currentSessions = sessionsRef.current;
         for (const s of currentSessions) {
           const numericPatientId = parseInt(s.patientId, 10);
-          if (isNaN(numericPatientId) || !s.cnnOutput) continue;
+          if (
+            isNaN(numericPatientId) ||
+            !s.cnnOutput ||
+            !ownedIds.has(String(numericPatientId))
+          ) {
+            continue;
+          }
           try {
-            await apiCreateSession(numericPatientId, {
-              id: s.id,
-              asha_worker_id: s.ashaWorkerId || null,
-              started_at: s.startedAt,
-              completed_at: s.completedAt || null,
-              signal_source: s.signalSource || null,
-              risk_bucket: s.cnnOutput.pneumoniaRiskBucket || null,
-              confidence: s.cnnOutput.confidence ?? null,
-              requires_escalation: s.cnnOutput.guardrails.requiresDoctorEscalation,
-              cnn_output: s.cnnOutput as unknown as Record<string, any>,
-              symptoms: s.symptoms,
-              zone_results: (s.zoneResults as unknown as Record<string, any>[]) ?? null,
-              notes: s.notes || null,
-              gps_lat: s.gpsLat ?? null,
-              gps_lon: s.gpsLon ?? null,
-              referral_status: s.referralStatus || null,
-              referral_timestamp: s.referralTimestamp || null,
-            }, token);
-          } catch { /* skip — will retry next sync */ }
+            await apiCreateSession(numericPatientId, localSessionToPayload(s), token);
+          } catch {
+            /* skip — will retry next sync */
+          }
         }
-      } catch { /* network error — will retry next time */ } finally {
+      } catch {
+        /* network error — will retry next time */
+      } finally {
         setIsSyncing(false);
       }
     })();
-  // isConnected changes reset the key so reconnecting triggers a fresh sync.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // isConnected changes reset the key so reconnecting triggers a fresh sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, token, isAuthenticated]);
 
   // Reset the sync key when connectivity drops so that reconnecting re-triggers.
@@ -524,9 +622,15 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
 
         setPatients((prev) => {
           const serverIds = new Set(mapped.map((p) => p.id));
-          const localOnly = prev.filter((p) => !serverIds.has(p.id));
+          const localOnly = prev.filter(
+            (p) => p.id.startsWith("local-") && !serverIds.has(p.id),
+          );
           return [...mapped, ...localOnly];
         });
+        const ownedIds = new Set(mapped.map((p) => p.id));
+        setSelectedPatientId((prev) =>
+          prev && ownedIds.has(prev) ? prev : mapped[0]?.id ?? null,
+        );
       } finally {
         setIsSyncing(false);
       }

@@ -1,6 +1,6 @@
 export default {
   common: {
-    appName: 'Sthetho Scan',
+    appName: 'Stethoscan',
     tagline: 'Portable Lung Screening for Every Village',
     save: 'Save',
     cancel: 'Cancel',

@@ -1,4 +1,10 @@
-import React, { useRef, useCallback, useState, useMemo, useEffect } from "react";
+import React, {
+  useRef,
+  useCallback,
+  useState,
+  useMemo,
+  useEffect,
+} from "react";
 import {
   View,
   Text,
@@ -49,6 +55,7 @@ export default function AiAssistantScreen() {
 
   const {
     selectedPatientId,
+    selectPatient,
     patients,
     getSessionsForPatient,
     getRecentSoundRecords,
@@ -59,16 +66,27 @@ export default function AiAssistantScreen() {
     selectedPatientId,
   );
 
+  useEffect(() => {
+    // Keep local picker selection aligned with provider-selected patient,
+    // especially after async hydration/login restore.
+    if (selectedPatientId && !activePatientId) {
+      setActivePatientId(selectedPatientId);
+    } else if (!activePatientId && patients.length > 0) {
+      setActivePatientId(patients[0].id);
+    }
+  }, [selectedPatientId, activePatientId, patients]);
+
   const handleSelectPatient = useCallback(
     (id: string) => {
       if (id !== activePatientId) {
         setActivePatientId(id);
+        selectPatient(id);
         clearMessages();
       }
       setShowPatientPicker(false);
       setPickerSearch("");
     },
-    [activePatientId, clearMessages],
+    [activePatientId, clearMessages, selectPatient],
   );
 
   const filteredPatients = useMemo(() => {
@@ -90,6 +108,13 @@ export default function AiAssistantScreen() {
     : [];
   const { alerts: outbreakAlerts } = useOutbreak();
   const latestCnn = sessions[0]?.cnnOutput ?? null;
+  const canSendMessage =
+    !isStreaming &&
+    !!input.trim() &&
+    !!isAuthenticated &&
+    !!token &&
+    !!patient &&
+    !patient?.id.startsWith("local-");
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
@@ -190,24 +215,38 @@ export default function AiAssistantScreen() {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
           Animated.delay(600 - delay),
         ]),
       );
     const a1 = makePulse(dot1, 0);
     const a2 = makePulse(dot2, 200);
     const a3 = makePulse(dot3, 400);
-    a1.start(); a2.start(); a3.start();
-    return () => { a1.stop(); a2.stop(); a3.stop(); };
+    a1.start();
+    a2.start();
+    a3.start();
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+    };
   }, [isStreaming, dot1, dot2, dot3]);
 
   const hasRecentRecordings = recentRecords.length > 0;
   const greeting = !patient
-    ? "I'm Sthetho Scan AI. Select a patient above to begin a contextual consultation."
+    ? "I'm Stethoscan AI. Select a patient above to begin a contextual consultation."
     : latestCnn && hasRecentRecordings
-      ? `I'm Sthetho Scan AI. I have access to ${patient.name}'s screening data and medical records. Ask me anything about the results, risk assessment, or next steps.`
-      : `I'm Sthetho Scan AI. I don't have a recent lung recording yet for ${patient.name}, so I can't provide meaningful insights. Please run a new lung check first, then come back.`;
+      ? `I'm Stethoscan AI. I have access to ${patient.name}'s screening data and medical records. Ask me anything about the results, risk assessment, or next steps.`
+      : `I'm Stethoscan AI. I don't have a recent lung recording yet for ${patient.name}, so I can't provide meaningful insights. Please run a new lung check first, then come back.`;
 
   return (
     <KeyboardAvoidingView
@@ -350,7 +389,10 @@ export default function AiAssistantScreen() {
         {messages.map((msg, idx) => {
           const isLastMsg = idx === messages.length - 1;
           const isLoadingBubble =
-            msg.role === "assistant" && isStreaming && isLastMsg && !msg.content;
+            msg.role === "assistant" &&
+            isStreaming &&
+            isLastMsg &&
+            !msg.content;
           return (
             <View
               key={msg.id}
@@ -398,13 +440,13 @@ export default function AiAssistantScreen() {
           accessibilityHint="Type your question for the AI assistant"
         />
         <TouchableOpacity
-          style={[styles.sendBtn, isStreaming && styles.sendBtnDisabled]}
+          style={[styles.sendBtn, !canSendMessage && styles.sendBtnDisabled]}
           onPress={handleSend}
-          disabled={isStreaming}
+          disabled={!canSendMessage}
           accessibilityRole="button"
           accessibilityLabel={t("accessibility.sendMessage")}
           accessibilityHint="Sends the current message to the assistant"
-          accessibilityState={{ disabled: isStreaming }}
+          accessibilityState={{ disabled: !canSendMessage }}
         >
           <Text style={styles.sendIcon}>&#x2191;</Text>
         </TouchableOpacity>

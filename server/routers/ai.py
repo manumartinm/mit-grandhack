@@ -4,23 +4,34 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from pydantic_ai import Agent, RunContext
 from sqlalchemy.orm import Session
 
 from core.security import get_current_user
-from database import get_db
+from database import SessionLocal, get_db
+from iris_client import iris_vector_client
 from models import MedicalRecord, Patient, User
 from schemas import AIChatRequest, AIOcrRequest, AIScreeningInsightsRequest
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
+def _get_owned_patient_or_404(db: Session, patient_id: int, owner_id: int) -> Patient:
+    patient = (
+        db.query(Patient)
+        .filter(Patient.id == patient_id, Patient.created_by == owner_id)
+        .first()
+    )
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
+
+
 @dataclass
 class AgentDeps:
-    db: Session
     patient_id: int
     cnn_output: dict[str, Any] | None
     outbreak_alerts: list[dict[str, Any]]
@@ -39,57 +50,65 @@ coordinator_agent = Agent(
     "openai:gpt-4o-mini",
     deps_type=AgentDeps,
     system_prompt=(
-        "You are Sthetho Scan AI, a clinical decision-support assistant for lung screening.\n"
+        "You are Stethoscan AI, a clinical decision-support assistant for lung screening.\n"
         "Use tools to gather EMR and risk context before concluding.\n"
         "Rules:\n"
         "- You are not a final diagnosis system.\n"
         "- Escalate to a doctor when risk or guardrails indicate.\n"
         "- Keep guidance short and practical for health workers.\n"
+        "- Return plain text only (no Markdown, no bullets with markdown syntax, no code fences).\n"
+        "- Always consider both: (a) the latest user message and (b) the full conversation history.\n"
     ),
 )
 
 
 @coordinator_agent.tool
 def get_patient_emr(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
-    records = (
-        ctx.deps.db.query(MedicalRecord)
-        .filter(MedicalRecord.patient_id == ctx.deps.patient_id)
-        .order_by(MedicalRecord.created_at.desc())
-        .all()
-    )
-    return [
-        {
-            "id": r.id,
-            "record_type": r.record_type,
-            "title": r.title,
-            "content": r.content,
-            "record_date": r.record_date,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in records
-    ]
+    db = SessionLocal()
+    try:
+        records = (
+            db.query(MedicalRecord)
+            .filter(MedicalRecord.patient_id == ctx.deps.patient_id)
+            .order_by(MedicalRecord.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "record_type": r.record_type,
+                "title": r.title,
+                "content": r.content,
+                "record_date": r.record_date,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in records
+        ]
+    finally:
+        db.close()
 
 
 @coordinator_agent.tool
 def get_screening_history(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
-    patient = (
-        ctx.deps.db.query(Patient).filter(Patient.id == ctx.deps.patient_id).first()
-    )
-    if not patient:
-        return {"history": [], "notes": None}
+    db = SessionLocal()
+    try:
+        patient = db.query(Patient).filter(Patient.id == ctx.deps.patient_id).first()
+        if not patient:
+            return {"history": [], "notes": None}
 
-    parsed_notes: dict[str, Any] | None = None
-    if patient.notes:
-        try:
-            parsed_notes = json.loads(patient.notes)
-        except Exception:
-            parsed_notes = {"raw_notes": patient.notes}
+        parsed_notes: dict[str, Any] | None = None
+        if patient.notes:
+            try:
+                parsed_notes = json.loads(patient.notes)
+            except Exception:
+                parsed_notes = {"raw_notes": patient.notes}
 
-    return {
-        "patient_name": patient.full_name,
-        "notes": parsed_notes,
-        "latest_cnn_output": ctx.deps.cnn_output,
-    }
+        return {
+            "patient_name": patient.full_name,
+            "notes": parsed_notes,
+            "latest_cnn_output": ctx.deps.cnn_output,
+        }
+    finally:
+        db.close()
 
 
 @coordinator_agent.tool
@@ -127,6 +146,16 @@ def check_escalation(
 
 
 @coordinator_agent.tool
+async def rag_notes_search(
+    ctx: RunContext[AgentDeps], query: str
+) -> list[dict[str, Any]]:
+    embedding = await _embed_text_async(query)
+    return iris_vector_client.search(
+        query_embedding=embedding, patient_id=ctx.deps.patient_id, top_k=5
+    )
+
+
+@coordinator_agent.tool
 async def summarize_emr(ctx: RunContext[AgentDeps], records: list[dict[str, Any]]) -> str:
     if not records:
         return "No EMR records are available."
@@ -149,23 +178,43 @@ async def chat(
             status_code=503, detail="OPENAI_API_KEY is not configured on the server."
         )
 
-    patient = db.query(Patient).filter(Patient.id == body.patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
+    _get_owned_patient_or_404(db, body.patient_id, current_user.id)
 
     conversation = "\n".join([f"{m.role}: {m.content}" for m in body.messages])
+    user_query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
+    rag_context = []
+    if user_query:
+        try:
+            embedding = await _embed_text_async(user_query)
+            rag_context = iris_vector_client.search(
+                query_embedding=embedding, patient_id=body.patient_id, top_k=3
+            )
+        except Exception as exc:
+            print(f"WARNING: RAG retrieval failed: {exc}")
+    rag_block = "None."
+    if rag_context:
+        rag_lines = [
+            f"- ({item.get('record_type', 'note')}, sim={item.get('similarity', 0):.3f}) {item.get('text', '')}"
+            for item in rag_context
+        ]
+        rag_block = "\n".join(rag_lines)
     prompt = (
         f"Patient ID: {body.patient_id}\n"
+        f"Latest user input:\n{user_query}\n\n"
         f"Conversation:\n{conversation}\n\n"
         f"Client provided medical records: {json.dumps(body.medical_records, ensure_ascii=False)}\n"
+        f"[RAG CONTEXT]\n{rag_block}\n\n"
         "Use tools to gather EMR and risk context, then respond with:\n"
         "1) clinical interpretation,\n"
         "2) immediate next steps,\n"
-        "3) whether doctor escalation is needed and why."
+        "3) whether doctor escalation is needed and why.\n"
+        "Output format constraints:\n"
+        "- Plain text only.\n"
+        "- Do not use Markdown symbols (#, *, -, ```).\n"
+        "- Base your answer on the latest user input while keeping consistency with the full conversation history.\n"
     )
 
     deps = AgentDeps(
-        db=db,
         patient_id=body.patient_id,
         cnn_output=body.cnn_output,
         outbreak_alerts=body.outbreak_alerts,
@@ -200,17 +249,53 @@ def _openai_client() -> AsyncOpenAI:
     return AsyncOpenAI(api_key=api_key)
 
 
+async def _embed_text_async(text: str) -> list[float]:
+    client = _openai_client()
+    try:
+        response = await client.embeddings.create(model="text-embedding-3-small", input=text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return list(response.data[0].embedding)
+
+
+def _embed_text_sync(text: str) -> list[float]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return []
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.embeddings.create(model="text-embedding-3-small", input=text)
+        return list(response.data[0].embedding)
+    except Exception as exc:
+        print(f"WARNING: could not generate embedding: {exc}")
+        return []
+
+
+def _store_summary_embedding(patient_id: int | None, summary_text: str) -> None:
+    if patient_id is None or not summary_text:
+        return
+    embedding = _embed_text_sync(summary_text)
+    if not embedding:
+        return
+    iris_vector_client.upsert(
+        patient_id=patient_id,
+        text=summary_text,
+        record_type="ai_summary",
+        embedding=embedding,
+    )
+
+
 @router.post("/screening-insights")
 async def screening_insights(
     body: AIScreeningInsightsRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     patient_summary = "No patient context provided."
     if body.patient_id is not None:
-        patient = db.query(Patient).filter(Patient.id == body.patient_id).first()
-        if patient:
-            patient_summary = f"Patient: {patient.full_name}"
+        patient = _get_owned_patient_or_404(db, body.patient_id, current_user.id)
+        patient_summary = f"Patient: {patient.full_name}"
 
     prompt = (
         "You are a nurse-facing clinical triage assistant for rural health workers.\n"
@@ -241,6 +326,7 @@ async def screening_insights(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     content = (completion.choices[0].message.content or "").strip()
+    background_tasks.add_task(_store_summary_embedding, body.patient_id, content)
     return {"insights": content}
 
 

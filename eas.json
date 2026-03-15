@@ -8,11 +8,17 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://TU_IP_AQUI:8000"
+        "EXPO_PUBLIC_API_URL": "https://5bb1-192-54-222-203.ngrok-free.app"
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://5bb1-192-54-222-203.ngrok-free.app"
+      }
     },
     "production": {
       "autoIncrement": true

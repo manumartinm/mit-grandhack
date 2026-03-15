@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -9,6 +9,7 @@ import {
 import { useRouter } from "expo-router";
 import { format } from "date-fns";
 import { Button, Card, RiskBadge } from "../../src/components";
+import { apiFetch } from "../../src/config/api";
 import { useOutbreak } from "../../src/providers/OutbreakProvider";
 import { usePatients } from "../../src/providers/PatientProvider";
 import { colors } from "../../src/theme/colors";
@@ -27,6 +28,11 @@ export default function DashboardScreen() {
   const activeAlerts = getActiveAlerts();
   const highRiskPatients = getHighRiskPatients();
   const todayCount = getTodaySessionCount();
+  const [fhirSummary, setFhirSummary] = useState<{
+    patient_count: number;
+    observation_count: number;
+    fhir_base: string;
+  } | null>(null);
 
   const followUpDue = useMemo(() => {
     return patients.filter((patient) => {
@@ -35,6 +41,28 @@ export default function DashboardScreen() {
       return latest.cnnOutput.pneumoniaRiskBucket !== "low";
     });
   }, [patients, getSessionsForPatient]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await apiFetch("/fhir/summary");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!mounted) return;
+        setFhirSummary({
+          patient_count: Number(data?.patient_count ?? 0),
+          observation_count: Number(data?.observation_count ?? 0),
+          fhir_base: String(data?.fhir_base ?? ""),
+        });
+      } catch {
+        // Keep dashboard usable even when FHIR endpoint is down.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -63,6 +91,19 @@ export default function DashboardScreen() {
             onPress={() => router.push("/outbreak")}
           />
         </View>
+      </Card>
+
+      <Card>
+        <Text style={styles.sectionTitle}>FHIR Health Record Store</Text>
+        <Text style={styles.sectionText}>
+          Patients in IRIS: {fhirSummary?.patient_count ?? 0}
+        </Text>
+        <Text style={styles.sectionText}>
+          Observations logged: {fhirSummary?.observation_count ?? 0}
+        </Text>
+        <Text style={styles.fhirSourceText}>
+          source: {fhirSummary?.fhir_base || "not configured"}
+        </Text>
       </Card>
 
       <Card>
@@ -145,6 +186,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionText: { fontSize: 13, color: colors.text.secondary, lineHeight: 18 },
+  fhirSourceText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontStyle: "italic",
+  },
   inlineActions: { marginTop: 10 },
   followUpRow: {
     flexDirection: "row",

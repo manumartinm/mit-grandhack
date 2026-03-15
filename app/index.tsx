@@ -8,6 +8,7 @@ import {
   Platform,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -86,11 +87,13 @@ export default function LoginScreen() {
             style={styles.iconCircle}
             accessible
             accessibilityRole="image"
-            accessibilityLabel="Lungs icon"
+            accessibilityLabel="Stethoscan logo"
           >
-            <Text style={styles.icon} importantForAccessibility="no">
-              &#x1FAC1;
-            </Text>
+            <Image
+              source={require("../assets/favicon.jpeg")}
+              style={styles.logoImage}
+              resizeMode="cover"
+            />
           </View>
           <Text style={styles.appName} maxFontSizeMultiplier={2}>
             {t("common.appName")}
@@ -201,7 +204,7 @@ export default function LoginScreen() {
           )}
 
           {isLoading && (
-            <ActivityIndicator style={styles.spinner} color="#0D9488" />
+            <ActivityIndicator style={styles.spinner} color="#326EA2" />
           )}
 
           <TouchableOpacity
@@ -250,19 +253,22 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#CCFBF1",
+    backgroundColor: "rgba(50,110,162,0.12)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(29,68,102,0.14)",
   },
-  icon: { fontSize: 36 },
+  logoImage: { width: "100%", height: "100%" },
   appName: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#111827",
+    color: "#20374C",
     letterSpacing: -0.5,
   },
-  tagline: { fontSize: 14, color: "#6B7280", marginTop: 4 },
+  tagline: { fontSize: 14, color: "#3E5E7A", marginTop: 4 },
   form: { paddingHorizontal: 24 },
   tabs: {
     flexDirection: "row",
@@ -286,7 +292,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   tabText: { fontSize: 14, fontWeight: "500", color: "#4B5563" },
-  tabTextActive: { color: "#0D9488", fontWeight: "600" },
+  tabTextActive: { color: "#326EA2", fontWeight: "600" },
   successBanner: {
     backgroundColor: "#ECFDF5",
     paddingHorizontal: 12,
@@ -296,7 +302,7 @@ const styles = StyleSheet.create({
   },
   successText: {
     fontSize: 13,
-    color: "#059669",
+    color: "#326EA2",
     textAlign: "center",
     fontWeight: "500",
   },
