@@ -7,6 +7,7 @@ import * as Location from "expo-location";
 import { Header, Button } from "../../src/components";
 import { usePatients } from "../../src/providers/PatientProvider";
 import { useSpp } from "../../src/providers/SppProvider";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { coughRecorder } from "../../src/features/audio/coughRecorder";
 import { modelRunner } from "../../src/features/inference/modelRunner";
 import { fuseSignals } from "../../src/features/audio/dualSignalFusion";
@@ -124,6 +125,7 @@ export default function ScreeningScreen() {
   const router = useRouter();
   const { selectedPatientId, patients, addSession, getRecentSoundRecords } =
     usePatients();
+  const { token } = useAuth();
   const patient = patients.find((p) => p.id === selectedPatientId);
   const spp = useSpp();
 
@@ -151,8 +153,12 @@ export default function ScreeningScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // SPP simulated waveform timer
   const sppWaveSimRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // SPP UI timer for smooth counter updates
+  const sppUiTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Belt-and-suspenders UI-side zone timeout
   const sppZoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const latestSppProgressRef = useRef(0);
 
   const gpsRef = useRef<{ lat: number; lon: number } | null>(null);
   const zoneBufferRef = useRef<number[]>([]);
@@ -204,6 +210,7 @@ export default function ScreeningScreen() {
   useEffect(() => {
     if (!spp.recordingProgress) return;
     if (stepRef.current !== "recording") return;
+    latestSppProgressRef.current = spp.recordingProgress.current;
     setRecordingDuration(spp.recordingProgress.current);
   }, [spp.recordingProgress]);
 
@@ -228,6 +235,10 @@ export default function ScreeningScreen() {
     if (sppWaveSimRef.current) {
       clearInterval(sppWaveSimRef.current);
       sppWaveSimRef.current = null;
+    }
+    if (sppUiTimerRef.current) {
+      clearInterval(sppUiTimerRef.current);
+      sppUiTimerRef.current = null;
     }
     if (sppZoneTimeoutRef.current) {
       clearTimeout(sppZoneTimeoutRef.current);
@@ -335,6 +346,8 @@ export default function ScreeningScreen() {
 
     if (source === "wearable") {
       // ── SPP path: send 'R' to ESP32, drive UI from [REC] callbacks ──────────
+      recordingStartedAtRef.current = Date.now();
+      latestSppProgressRef.current = 0;
       spp.sendRecord();
 
       // Simulated breathing waveform while waiting for the real audio data
@@ -348,6 +361,15 @@ export default function ScreeningScreen() {
         });
         setWaveformData((prev) => [...prev.slice(-200), ...chunk]);
       }, 20);
+
+      // Smooth UI timer so seconds don't jump or lag behind BT status lines.
+      sppUiTimerRef.current = setInterval(() => {
+        if (!recordingStartedAtRef.current) return;
+        const elapsedSec = (Date.now() - recordingStartedAtRef.current) / 1000;
+        const optimistic = Math.min(SPP_ZONE_DURATION_SEC, elapsedSec);
+        const fromBt = Math.min(SPP_ZONE_DURATION_SEC, latestSppProgressRef.current);
+        setRecordingDuration(Math.max(optimistic, fromBt));
+      }, 200);
 
       // UI-side safety timeout (sppService already has its own 30s timeout)
       sppZoneTimeoutRef.current = setTimeout(() => {
@@ -446,16 +468,20 @@ export default function ScreeningScreen() {
   // ── Analysis step ────────────────────────────────────────────────────────────
   const runAnalysis = async () => {
     setStep("analyzing");
+    const sessionId = `session-${Date.now()}`;
 
     // wearableAudioBuffer = accumulated SPP int16→uint8 samples across all zones
     const audioData =
       signalSource !== "phone_mic" ? wearableAudioBuffer : waveformData;
-    const wearableResult = await modelRunner.runInference(audioData);
+    const wearableResult = await modelRunner.runInference(audioData, {
+      patientId: selectedPatientId,
+      token,
+      sessionId,
+    });
     const coughResult = coughUri ? await modelRunner.runInference([]) : null;
     const prevRecords = selectedPatientId
       ? getRecentSoundRecords(selectedPatientId)
       : [];
-    const sessionId = `session-${Date.now()}`;
     const allZonesCaptured =
       zoneResults.filter((z) => z.passed).length === LUNG_ZONES.length;
     const zoneQuality =
@@ -543,13 +569,23 @@ export default function ScreeningScreen() {
 
   // ── Derived recording UI values ───────────────────────────────────────────────
   const isReceivingAudio = spp.connectionState === "receiving";
+  const transferPercent =
+    spp.transferProgress && spp.transferProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round((spp.transferProgress.received / spp.transferProgress.total) * 100)
+        )
+      : null;
   const isSppRecording =
     signalSource === "wearable" &&
     (spp.connectionState === "recording" ||
       spp.connectionState === "receiving");
   const displayDuration =
-    spp.recordingProgress && signalSource === "wearable"
-      ? spp.recordingProgress.current
+    signalSource === "wearable"
+      ? Math.min(
+          SPP_ZONE_DURATION_SEC,
+          Math.max(recordingDuration, spp.recordingProgress?.current ?? 0)
+        )
       : recordingDuration;
   const displayTotal =
     signalSource === "wearable" ? SPP_ZONE_DURATION_SEC : 10;
@@ -654,11 +690,20 @@ export default function ScreeningScreen() {
               isReceivingAudio ? "Receiving audio from device" : "Recording in progress"
             }
           >
-            {isReceivingAudio ? "Receiving audio…" : "Recording…"}
+            {isReceivingAudio ? "Transferring audio from ESP32…" : "Recording…"}
           </Text>
 
+          {isReceivingAudio && transferPercent !== null && (
+            <Text style={styles.transferHint}>
+              {transferPercent}% received ({spp.transferProgress?.received ?? 0}/
+              {spp.transferProgress?.total ?? 0} bytes)
+            </Text>
+          )}
+
           <Text style={styles.timer} accessibilityLiveRegion="polite">
-            {displayDuration}s / {displayTotal}s
+            {signalSource === "wearable"
+              ? `${displayDuration.toFixed(1)}s / ${displayTotal}s`
+              : `${Math.floor(displayDuration)}s / ${displayTotal}s`}
           </Text>
 
           <View style={styles.waveform}>
@@ -888,6 +933,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#059669",
   },
   qualityGood: { fontSize: 15, color: "#059669", fontWeight: "600" },
+  transferHint: {
+    fontSize: 13,
+    color: "#2D4E73",
+    marginBottom: 8,
+    textAlign: "center",
+  },
   warnCircle: {
     width: 80,
     height: 80,

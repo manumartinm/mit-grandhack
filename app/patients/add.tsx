@@ -6,6 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -88,11 +90,16 @@ export default function AddPatientScreen() {
   const isPediatric = parseInt(age, 10) > 0 && parseInt(age, 10) < 5;
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={8}
+    >
       <Header title={t("patient.addNew")} showBack />
       <ScrollView
         contentContainerStyle={styles.form}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       >
         {isPediatric && (
           <View style={styles.pediatricBanner}>
@@ -190,7 +197,7 @@ export default function AddPatientScreen() {
           <ActivityIndicator style={{ marginTop: 8 }} color="#0D9488" />
         )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -30,6 +30,12 @@ export interface InferenceResult {
 
 import { getApiUrl } from '../../config/api';
 
+interface InferenceContext {
+  patientId?: string | number | null;
+  token?: string | null;
+  sessionId?: string | null;
+}
+
 class ModelRunner {
   private getServerUrl(): string {
     return getApiUrl();
@@ -47,21 +53,37 @@ class ModelRunner {
     }
   }
 
-  async runInference(audioData: number[]): Promise<InferenceResult> {
+  async runInference(audioData: number[], ctx: InferenceContext = {}): Promise<InferenceResult> {
     if (audioData.length === 0) {
       return this.mockInference();
     }
 
     try {
+      const parsedPatientId =
+        typeof ctx.patientId === 'number'
+          ? ctx.patientId
+          : Number.parseInt(String(ctx.patientId ?? ''), 10);
+      if (!Number.isFinite(parsedPatientId) || parsedPatientId <= 0 || !ctx.token) {
+        logger.warn('Skipping server inference: missing authenticated patient context');
+        return this.mockInference();
+      }
+
       const blob = new Blob([new Uint8Array(audioData)], { type: 'application/octet-stream' });
       const formData = new FormData();
       formData.append('audio', blob, 'audio.pcm');
+      formData.append('patient_id', String(parsedPatientId));
+      if (ctx.sessionId) {
+        formData.append('session_id', ctx.sessionId);
+      }
 
       const res = await retryFetch(
         () =>
           fetch(`${this.getServerUrl()}/predict`, {
             method: 'POST',
             body: formData,
+            headers: {
+              Authorization: `Bearer ${ctx.token}`,
+            },
           }),
         2
       );

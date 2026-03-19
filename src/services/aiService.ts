@@ -63,21 +63,25 @@ export async function streamChat(
   }
 
   try {
+    const payload = {
+      patient_id: numericPatientId,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      cnn_output: context.latestCnn,
+      outbreak_alerts: context.outbreakAlerts,
+      medical_records: context.medicalRecords.map(toServerMedicalRecord),
+    };
+
+    const headers = {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
     const res = await retryFetch(
       () =>
         fetch(`${getApiUrl()}/ai/chat`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            patient_id: numericPatientId,
-            messages: messages.map((m) => ({ role: m.role, content: m.content })),
-            cnn_output: context.latestCnn,
-            outbreak_alerts: context.outbreakAlerts,
-            medical_records: context.medicalRecords.map(toServerMedicalRecord),
-          }),
+          headers,
+          body: JSON.stringify(payload),
           signal,
         }),
       2,
@@ -91,7 +95,30 @@ export async function streamChat(
 
     const reader = res.body?.getReader();
     if (!reader) {
-      onError("No response stream");
+      const fallbackRes = await retryFetch(
+        () =>
+          fetch(`${getApiUrl()}/ai/chat-sync`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+            signal,
+          }),
+        2,
+      );
+      if (!fallbackRes.ok) {
+        const body = await fallbackRes.json().catch(() => ({}));
+        onError(parseApiError(body, fallbackRes.status));
+        return;
+      }
+      const data = await fallbackRes.json().catch(() => ({}));
+      const content =
+        typeof data?.content === "string" ? data.content : "";
+      if (!content.trim()) {
+        onError("No response stream");
+        return;
+      }
+      onToken(content);
+      onDone();
       return;
     }
 

@@ -180,45 +180,7 @@ async def chat(
 
     _get_owned_patient_or_404(db, body.patient_id, current_user.id)
 
-    conversation = "\n".join([f"{m.role}: {m.content}" for m in body.messages])
-    user_query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
-    rag_context = []
-    if user_query:
-        try:
-            embedding = await _embed_text_async(user_query)
-            rag_context = iris_vector_client.search(
-                query_embedding=embedding, patient_id=body.patient_id, top_k=3
-            )
-        except Exception as exc:
-            print(f"WARNING: RAG retrieval failed: {exc}")
-    rag_block = "None."
-    if rag_context:
-        rag_lines = [
-            f"- ({item.get('record_type', 'note')}, sim={item.get('similarity', 0):.3f}) {item.get('text', '')}"
-            for item in rag_context
-        ]
-        rag_block = "\n".join(rag_lines)
-    prompt = (
-        f"Patient ID: {body.patient_id}\n"
-        f"Latest user input:\n{user_query}\n\n"
-        f"Conversation:\n{conversation}\n\n"
-        f"Client provided medical records: {json.dumps(body.medical_records, ensure_ascii=False)}\n"
-        f"[RAG CONTEXT]\n{rag_block}\n\n"
-        "Use tools to gather EMR and risk context, then respond with:\n"
-        "1) clinical interpretation,\n"
-        "2) immediate next steps,\n"
-        "3) whether doctor escalation is needed and why.\n"
-        "Output format constraints:\n"
-        "- Plain text only.\n"
-        "- Do not use Markdown symbols (#, *, -, ```).\n"
-        "- Base your answer on the latest user input while keeping consistency with the full conversation history.\n"
-    )
-
-    deps = AgentDeps(
-        patient_id=body.patient_id,
-        cnn_output=body.cnn_output,
-        outbreak_alerts=body.outbreak_alerts,
-    )
+    prompt, deps = await _build_chat_prompt_and_deps(body)
 
     async def stream():
         try:
@@ -240,6 +202,27 @@ async def chat(
     return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)
 
 
+@router.post("/chat-sync")
+async def chat_sync(
+    body: AIChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=503, detail="OPENAI_API_KEY is not configured on the server."
+        )
+
+    _get_owned_patient_or_404(db, body.patient_id, current_user.id)
+    prompt, deps = await _build_chat_prompt_and_deps(body)
+    try:
+        result = await coordinator_agent.run(prompt, deps=deps)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"content": str(result.output)}
+
+
 def _openai_client() -> AsyncOpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -256,6 +239,51 @@ async def _embed_text_async(text: str) -> list[float]:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return list(response.data[0].embedding)
+
+
+async def _build_chat_prompt_and_deps(body: AIChatRequest) -> tuple[str, AgentDeps]:
+    conversation = "\n".join([f"{m.role}: {m.content}" for m in body.messages])
+    user_query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
+    rag_context = []
+    if user_query:
+        try:
+            embedding = await _embed_text_async(user_query)
+            rag_context = iris_vector_client.search(
+                query_embedding=embedding, patient_id=body.patient_id, top_k=3
+            )
+        except Exception as exc:
+            print(f"WARNING: RAG retrieval failed: {exc}")
+
+    rag_block = "None."
+    if rag_context:
+        rag_lines = [
+            f"- ({item.get('record_type', 'note')}, sim={item.get('similarity', 0):.3f}) {item.get('text', '')}"
+            for item in rag_context
+        ]
+        rag_block = "\n".join(rag_lines)
+
+    prompt = (
+        f"Patient ID: {body.patient_id}\n"
+        f"Latest user input:\n{user_query}\n\n"
+        f"Conversation:\n{conversation}\n\n"
+        f"Client provided medical records: {json.dumps(body.medical_records, ensure_ascii=False)}\n"
+        f"[RAG CONTEXT]\n{rag_block}\n\n"
+        "Use tools to gather EMR and risk context, then respond with:\n"
+        "1) clinical interpretation,\n"
+        "2) immediate next steps,\n"
+        "3) whether doctor escalation is needed and why.\n"
+        "Output format constraints:\n"
+        "- Plain text only.\n"
+        "- Do not use Markdown symbols (#, *, -, ```).\n"
+        "- Base your answer on the latest user input while keeping consistency with the full conversation history.\n"
+    )
+
+    deps = AgentDeps(
+        patient_id=body.patient_id,
+        cnn_output=body.cnn_output,
+        outbreak_alerts=body.outbreak_alerts,
+    )
+    return prompt, deps
 
 
 def _embed_text_sync(text: str) -> list[float]:

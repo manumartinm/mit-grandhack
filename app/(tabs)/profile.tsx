@@ -1,5 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { Card, Button, GlassSurface } from "../../src/components";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
@@ -28,8 +36,16 @@ export default function ProfileScreen() {
   }, [user?.full_name]);
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={8}
+    >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      >
         <GlassSurface elevated style={styles.emailBanner}>
           <Text style={styles.emailLabel}>Signed in as</Text>
           <Text style={styles.emailValue}>{user?.email ?? "unknown"}</Text>
@@ -95,7 +111,7 @@ export default function ProfileScreen() {
           />
         </Card>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

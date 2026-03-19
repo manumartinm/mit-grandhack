@@ -115,6 +115,24 @@ class ScreeningSession(Base):
     patient = relationship("Patient", back_populates="screening_sessions")
 
 
+class AudioRecording(Base):
+    __tablename__ = "audio_recordings"
+
+    record_id = Column(String(64), primary_key=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(String(64), nullable=True, index=True)
+
+    pcm_path = Column(String(512), nullable=False)
+    analysis_path = Column(String(512), nullable=False)
+    filename = Column(String(255), nullable=True)
+    content_type = Column(String(128), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("Patient")
+
+
 class MedicalRecord(Base):
     __tablename__ = "medical_records"
 

@@ -16,6 +16,7 @@ interface SppContextValue {
   connectedDeviceName: string | null;
   statusLog: string[];
   recordingProgress: { current: number; total: number } | null;
+  transferProgress: { received: number; total: number } | null;
   audioUri: string | null;
   /** uint8-normalised (0-255) samples from the most recent completed recording */
   zoneSamples: number[] | null;
@@ -44,6 +45,10 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
     current: number;
     total: number;
   } | null>(null);
+  const [transferProgress, setTransferProgress] = useState<{
+    received: number;
+    total: number;
+  } | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [zoneSamples, setZoneSamples] = useState<number[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +74,9 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
     sppService.onProgress = (current, total) => {
       setRecordingProgress({ current, total });
     };
+    sppService.onTransferProgress = (received, total) => {
+      setTransferProgress({ received, total });
+    };
 
     sppService.onZoneSamplesReady = (samples) => {
       setZoneSamples(samples);
@@ -77,6 +85,7 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
     sppService.onAudioReady = (uri) => {
       setAudioUri(uri);
       setRecordingProgress(null);
+      setTransferProgress(null);
     };
 
     sppService.onError = (err) => {
@@ -87,6 +96,7 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
       sppService.onStateChange = undefined;
       sppService.onStatusMessage = undefined;
       sppService.onProgress = undefined;
+      sppService.onTransferProgress = undefined;
       sppService.onZoneSamplesReady = undefined;
       sppService.onAudioReady = undefined;
       sppService.onError = undefined;
@@ -115,6 +125,7 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
     setConnectedDeviceName(null);
     setAudioUri(null);
     setRecordingProgress(null);
+    setTransferProgress(null);
     setStatusLog([]);
   }, []);
 
@@ -122,6 +133,7 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setAudioUri(null);
     setRecordingProgress({ current: 0, total: 5 });
+    setTransferProgress(null);
     await sppService.sendRecord();
   }, []);
 
@@ -143,6 +155,7 @@ export function SppProvider({ children }: { children: React.ReactNode }) {
         connectedDeviceName,
         statusLog,
         recordingProgress,
+        transferProgress,
         audioUri,
         zoneSamples,
         error,

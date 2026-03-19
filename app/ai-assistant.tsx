@@ -251,7 +251,8 @@ export default function AiAssistantScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={inTabs ? 8 : 0}
     >
       {!inTabs && (
         <Header title={t("ai.title")} subtitle={patient?.name} showBack />
@@ -380,6 +381,8 @@ export default function AiAssistantScreen() {
         ref={scrollRef}
         style={styles.messages}
         contentContainerStyle={styles.msgContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         accessibilityLabel="Conversation messages"
       >
         <View style={[styles.bubble, styles.aiBubble]}>

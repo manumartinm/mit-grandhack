@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -304,14 +306,22 @@ export default function PatientDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={8}
+    >
       <Header
         title={patient.name}
         subtitle={`${patient.age}y • ${patient.village || "Village N/A"}`}
         showBack
       />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+      >
         <Card variant="risk" riskLevel={latestCnn?.pneumoniaRiskBucket}>
           <View style={styles.summaryHeader}>
             <Text style={styles.sectionTitle}>Latest Risk Summary</Text>
@@ -779,7 +789,7 @@ export default function PatientDetailScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

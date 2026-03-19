@@ -18,12 +18,49 @@ from schemas import (
 router = APIRouter(prefix="/communications", tags=["communications"])
 
 
+def _is_participant(conversation: Conversation, user_id: int) -> bool:
+    return conversation.patient_id == user_id or conversation.doctor_id == user_id
+
+
+def _get_conversation_for_user_or_404(
+    db: Session, conversation_id: int, user_id: int
+) -> Conversation:
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if not _is_participant(conversation, user_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this conversation")
+    return conversation
+
+
 @router.post("/conversations", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
 def create_conversation(
     body: ConversationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.id not in (body.patient_id, body.doctor_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only create conversations that include your own user.",
+        )
+
+    patient_user = db.query(User).filter(User.id == body.patient_id).first()
+    doctor_user = db.query(User).filter(User.id == body.doctor_id).first()
+    if not patient_user or not doctor_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = (
+        db.query(Conversation)
+        .filter(
+            Conversation.patient_id == body.patient_id,
+            Conversation.doctor_id == body.doctor_id,
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
     conversation = Conversation(
         patient_id=body.patient_id,
         doctor_id=body.doctor_id,
@@ -41,10 +78,23 @@ def list_conversations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Conversation)
+    query = db.query(Conversation).filter(
+        (Conversation.patient_id == current_user.id)
+        | (Conversation.doctor_id == current_user.id)
+    )
     if patient_id is not None:
+        if patient_id != current_user.id and doctor_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only filter conversations where you are a participant.",
+            )
         query = query.filter(Conversation.patient_id == patient_id)
     if doctor_id is not None:
+        if doctor_id != current_user.id and patient_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only filter conversations where you are a participant.",
+            )
         query = query.filter(Conversation.doctor_id == doctor_id)
     return query.order_by(Conversation.created_at.desc()).all()
 
@@ -55,9 +105,7 @@ def list_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    _get_conversation_for_user_or_404(db, conversation_id, current_user.id)
     return (
         db.query(Message)
         .filter(Message.conversation_id == conversation_id)
@@ -77,9 +125,11 @@ def create_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = _get_conversation_for_user_or_404(db, conversation_id, current_user.id)
+    if body.sender_role == "patient" and conversation.patient_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only patient participant can send patient messages")
+    if body.sender_role == "doctor" and conversation.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only doctor participant can send doctor messages")
     message = Message(
         conversation_id=conversation_id,
         sender_role=body.sender_role,
@@ -97,6 +147,12 @@ def create_call_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.id not in (body.patient_id, body.doctor_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only create call requests where you are a participant.",
+        )
+
     call_request = CallRequest(
         patient_id=body.patient_id,
         doctor_id=body.doctor_id,
@@ -119,6 +175,8 @@ def get_call_request(
     call_request = db.query(CallRequest).filter(CallRequest.id == request_id).first()
     if not call_request:
         raise HTTPException(status_code=404, detail="Call request not found")
+    if current_user.id not in (call_request.patient_id, call_request.doctor_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this call request")
     return call_request
 
 
@@ -131,6 +189,8 @@ def cancel_call_request(
     call_request = db.query(CallRequest).filter(CallRequest.id == request_id).first()
     if not call_request:
         raise HTTPException(status_code=404, detail="Call request not found")
+    if current_user.id not in (call_request.patient_id, call_request.doctor_id):
+        raise HTTPException(status_code=403, detail="Not authorized for this call request")
     call_request.status = "ended"
     call_request.active = False
     db.add(call_request)

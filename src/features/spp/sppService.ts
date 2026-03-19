@@ -57,6 +57,7 @@ class SppService {
   onStateChange?: (state: SppConnectionState) => void;
   onStatusMessage?: (msg: string) => void;
   onProgress?: (current: number, total: number) => void;
+  onTransferProgress?: (received: number, total: number) => void;
   onAudioReady?: (uri: string) => void;
   /** Fires with uint8-normalised samples (0-255) ready for quality evaluation */
   onZoneSamplesReady?: (samples: number[]) => void;
@@ -106,6 +107,38 @@ class SppService {
     this.pcmSize = 0;
     this.pcmReceived = 0;
     this.pcmBuffer = [];
+  }
+
+  /**
+   * Some firmware variants send PCM size as ASCII (e.g. "160000\\n")
+   * instead of 4-byte little-endian binary. Support both to avoid parser stalls.
+   */
+  private tryParseAsciiPcmSize(): number | null {
+    const maxHeaderLen = 16;
+    const scanLen = Math.min(this.byteBuffer.length, maxHeaderLen);
+    let nlIdx = -1;
+    for (let i = 0; i < scanLen; i++) {
+      if (this.byteBuffer[i] === 0x0a) {
+        nlIdx = i;
+        break;
+      }
+    }
+    if (nlIdx < 1) return null;
+
+    let digits = '';
+    for (let i = 0; i < nlIdx; i++) {
+      const b = this.byteBuffer[i];
+      if (b === 0x0d) continue; // allow CR before LF
+      if (b < 0x30 || b > 0x39) return null;
+      digits += String.fromCharCode(b);
+    }
+    if (!digits) return null;
+    const parsed = Number.parseInt(digits, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+    // Consume ASCII size line including LF.
+    this.byteBuffer.splice(0, nlIdx + 1);
+    return parsed;
   }
 
   // ── Scan ──────────────────────────────────────────────────────────────────────
@@ -328,9 +361,18 @@ class SppService {
 
       // ── READ_SIZE: wait for 4-byte uint32 LE → pcmSize ─────────────────────
       else if (this.parserState === 'READ_SIZE') {
-        if (this.byteBuffer.length >= 4) {
+        const asciiSize = this.tryParseAsciiPcmSize();
+        if (asciiSize !== null) {
+          this.pcmSize = asciiSize;
+          this.onStatusMessage?.(`[SPP] PCM size: ${this.pcmSize} bytes (ASCII header)`);
+          this.onTransferProgress?.(0, this.pcmSize);
+          this.parserState = 'READ_PCM';
+          progress = true;
+        } else if (this.byteBuffer.length >= 4) {
           const b = this.byteBuffer.splice(0, 4);
           this.pcmSize = b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24);
+          this.onStatusMessage?.(`[SPP] PCM size: ${this.pcmSize} bytes (binary header)`);
+          this.onTransferProgress?.(0, this.pcmSize);
           this.parserState = 'READ_PCM';
           progress = true;
         }
@@ -342,8 +384,10 @@ class SppService {
         const take = Math.min(needed, this.byteBuffer.length);
         if (take > 0) {
           const chunk = this.byteBuffer.splice(0, take);
-          for (const b of chunk) this.pcmBuffer.push(b);
+          // Faster bulk append than pushing one-by-one on low-end devices.
+          this.pcmBuffer.push(...chunk);
           this.pcmReceived += take;
+          this.onTransferProgress?.(this.pcmReceived, this.pcmSize);
           progress = true;
           if (this.pcmReceived >= this.pcmSize) {
             this.parserState = 'WAIT_END';
